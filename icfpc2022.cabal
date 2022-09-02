@@ -16,12 +16,16 @@ library
         base,
         containers,
         text,
-        semigroupoids
+        semigroupoids,
+        transformers,
+        mtl
     hs-source-dirs: lib
     default-language: Haskell2010
     extensions:
         GHC2021,
-        LambdaCase
+        LambdaCase,
+        DerivingVia,
+        OverloadedStrings
     exposed-modules:
         ICFPC.Lib,
         ICFPC.ISL
