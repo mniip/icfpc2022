@@ -7,10 +7,21 @@ executable run
     build-depends: base
     hs-source-dirs: app
     default-language: Haskell2010
+    extensions:
+        GHC2021,
+        LambdaCase
 
 library
-    build-depends: base
+    build-depends:
+        base,
+        containers,
+        text,
+        semigroupoids
     hs-source-dirs: lib
     default-language: Haskell2010
+    extensions:
+        GHC2021,
+        LambdaCase
     exposed-modules:
-        ICFPC.Lib
+        ICFPC.Lib,
+        ICFPC.ISL
