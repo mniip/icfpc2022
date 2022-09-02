@@ -16,6 +16,14 @@ executable validate
     extensions:
         LambdaCase
 
+executable render
+    main-is: Render.hs
+    build-depends: base, icfpc2022, text, JuicyPixels
+    hs-source-dirs: app
+    default-language: GHC2021
+    extensions:
+        LambdaCase
+
 library
     build-depends:
         base,
@@ -24,7 +32,9 @@ library
         semigroupoids,
         transformers,
         mtl,
-        lens
+        lens,
+        JuicyPixels,
+        vector
     hs-source-dirs: lib
     default-language: GHC2021
     extensions:
@@ -37,4 +47,5 @@ library
         ICFPC.Lib,
         ICFPC.ISL,
         ICFPC.Tracer,
-        ICFPC.Cost
+        ICFPC.Cost,
+        ICFPC.Render
