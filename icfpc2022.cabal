@@ -6,9 +6,8 @@ executable run
     main-is: Run.hs
     build-depends: base
     hs-source-dirs: app
-    default-language: Haskell2010
+    default-language: GHC2021
     extensions:
-        GHC2021,
         LambdaCase
 
 library
@@ -18,14 +17,16 @@ library
         text,
         semigroupoids,
         transformers,
-        mtl
+        mtl,
+        lens
     hs-source-dirs: lib
-    default-language: Haskell2010
+    default-language: GHC2021
     extensions:
-        GHC2021,
         LambdaCase,
         DerivingVia,
-        OverloadedStrings
+        OverloadedStrings,
+        MultiWayIf
     exposed-modules:
         ICFPC.Lib,
-        ICFPC.ISL
+        ICFPC.ISL,
+        ICFPC.Tracer
