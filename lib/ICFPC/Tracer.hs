@@ -26,7 +26,7 @@ outer (MinMedMax a _ b) = MinMax a b
 
 type Block = XY (MinMax Int)
 
-data BState = BState !Int !(M.Map BlockId Block)
+data BState = BState !Int !Int !(M.Map BlockId Block)
 
 type Blocks = M.Map BlockId Block
 
@@ -50,12 +50,14 @@ class Monad m => MonadCommand m where
   onYMerge :: X (MinMax Int) -> Y (MinMedMax Int) -> m ()
 
 initState :: XY Int -> BState
-initState (XY x y) = BState 1 $ M.singleton (BlockId $ 0 NE.:| []) (XY (MinMax 0 x) (MinMax 0 y))
+initState (XY x y) = BState 0 1 $ M.singleton (BlockId $ 0 NE.:| []) (XY (MinMax 0 x) (MinMax 0 y))
 
 traceProgram :: MonadCommand m => Program -> ExceptT InvalidCommand (StateT BState m) ()
-traceProgram (Program ps) = forM_ ps $ \case
-  Command cmd -> traceCommand cmd
-  _ -> pure ()
+traceProgram (Program ps) = forM_ ps $ \pl -> do
+  case pl of
+    Command cmd -> traceCommand cmd
+    _ -> pure ()
+  modify $ \(BState line fresh bs) -> BState (line + 1) fresh bs
 
 traceCommand :: MonadCommand m => Command -> ExceptT InvalidCommand (StateT BState m) ()
 traceCommand = \case
@@ -115,11 +117,11 @@ traceCommand = \case
         lift . lift $ onYMerge xs1 ys'
       | otherwise -> throwError $ NotMergeable blk1 b1 blk2 b2
   where
-    block blk = get >>= \(BState _ bs) -> case M.lookup blk bs of
+    block blk = get >>= \(BState _ _ bs) -> case M.lookup blk bs of
       Nothing -> throwError $ BlockNotFound blk
       Just b -> pure b
-    modifyMap f = modify $ \(BState fresh bs) -> BState fresh (f bs)
-    newFresh = state $ \(BState fresh bs) -> (BlockId $ fresh NE.:| [], BState (fresh + 1) bs)
+    modifyMap f = modify $ \(BState line fresh bs) -> BState line fresh (f bs)
+    newFresh = state $ \(BState line fresh bs) -> (BlockId $ fresh NE.:| [], BState line (fresh + 1) bs)
     split p ps@(MinMax pmin pmax) blk orient
       | pmin + 1 >= pmax = throwError $ TooThinToCut blk orient ps
       | pmin < p && p < pmax = pure $ MinMedMax pmin p pmax
@@ -139,7 +141,7 @@ instance MonadCommand Identity where
   onXMerge _ _ = pure ()
   onYMerge _ _ = pure ()
 
-validate :: Program -> XY Int -> Maybe InvalidCommand
+validate :: Program -> XY Int -> Maybe (InvalidCommand, Int)
 validate prog size = case runStateT (runExceptT (traceProgram prog)) (initState size) of
-  Identity (Left err, _) -> Just err
+  Identity (Left err, BState line _ _) -> Just (err, line)
   Identity (Right _, _) -> Nothing

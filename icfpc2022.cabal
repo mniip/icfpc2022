@@ -7,6 +7,12 @@ executable run
     build-depends: base
     hs-source-dirs: app
     default-language: GHC2021
+
+executable validate
+    main-is: Validate.hs
+    build-depends: base, icfpc2022, text
+    hs-source-dirs: app
+    default-language: GHC2021
     extensions:
         LambdaCase
 
