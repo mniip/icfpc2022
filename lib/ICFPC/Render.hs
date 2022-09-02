@@ -11,6 +11,10 @@ newtype RenderM s a = RenderM { runRenderM :: MutableImage s PixelRGBA8 -> ST s 
   deriving (Functor, Applicative, Monad)
     via (ReaderT (MutableImage s PixelRGBA8) (ST s))
 
+instance MonadReader (XY Int) (RenderM s) where
+  ask = RenderM $ \image -> pure (XY (mutableImageWidth image) (mutableImageHeight image))
+  local = error "local"
+
 instance MonadCommand (RenderM s) where
   onXCut _ _ = pure ()
   onYCut _ _ = pure ()
@@ -35,8 +39,14 @@ instance MonadCommand (RenderM s) where
 runRender :: XY Int -> (forall s. RenderM s a) -> (a, Image PixelRGBA8)
 runRender (XY width height) f = runST $ do
   image <- newMutableImage width height
-  forM_ [0 .. width - 1] $ \y ->
-    forM [0 .. height - 1] $ \x ->
+  forM_ [0 .. height - 1] $ \y ->
+    forM_ [0 .. width - 1] $ \x ->
       writePixel image x y (PixelRGBA8 255 255 255 255)
   r <- runRenderM f image
+  forM_ [0 .. (height - 1) `div` 2] $ \y ->
+    forM_ [0 .. width - 1] $ \x -> do
+      c1 <- readPixel image x y
+      c2 <- readPixel image x (height - 1 - y)
+      writePixel image x y c2
+      writePixel image x (height - 1 - y) c1
   (r,) <$> unsafeFreezeImage image

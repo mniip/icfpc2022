@@ -1,5 +1,6 @@
 module ICFPC.Cost where
 
+import Codec.Picture
 import Control.Monad.Trans.Writer hiding (tell)
 import Control.Monad.Except
 import Control.Monad.Writer
@@ -47,3 +48,18 @@ instance (MonadReader (XY Int) m, MonadCommand m) => MonadCommand (CostT m) wher
   onYMerge xs ys = do
     addCost $ roundDiv $ 1 * area (XY xs (outer ys))
     lift $ onYMerge xs ys
+
+compareImages :: Image PixelRGBA8 -> Image PixelRGBA8 -> Int
+compareImages img1 img2
+  | imageWidth img2 /= width || imageHeight img2 /= height = error "Size mismatch"
+  | otherwise = round $ sum
+    [ dist (pixelAt img1 x y) (pixelAt img2 x y)
+    | y <- [0 .. width - 1]
+    , x <- [0 .. height - 1]
+    ] * (0.005 :: Double)
+
+  where
+    width = imageWidth img1
+    height = imageHeight img1
+    dist (PixelRGBA8 r1 g1 b1 a1) (PixelRGBA8 r2 g2 b2 a2)
+      = sqrt $ (fromIntegral r1 - fromIntegral r2)^2 + (fromIntegral g1 - fromIntegral g2)^2 + (fromIntegral b1 - fromIntegral b2)^2 + (fromIntegral a1 - fromIntegral a2)^2

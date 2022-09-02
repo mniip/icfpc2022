@@ -24,6 +24,14 @@ executable render
     extensions:
         LambdaCase
 
+executable score
+    main-is: Score.hs
+    build-depends: base, icfpc2022, text, JuicyPixels
+    hs-source-dirs: app
+    default-language: GHC2021
+    extensions:
+        LambdaCase
+
 library
     build-depends:
         base,
