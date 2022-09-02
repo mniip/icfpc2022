@@ -13,8 +13,6 @@ type Block = XY (MinMax Int)
 
 data BState = BState !Int !Int !(M.Map BlockId Block)
 
-type Blocks = M.Map BlockId Block
-
 data InvalidCommand
   = BlockNotFound !BlockId
   | TooThinToCut !BlockId !Orientation !(MinMax Int)

@@ -50,11 +50,14 @@ library
         DerivingVia,
         OverloadedStrings,
         MultiWayIf,
-        UndecidableInstances
+        UndecidableInstances,
+        RecordWildCards,
+        ViewPatterns
     exposed-modules:
         ICFPC.Lib,
         ICFPC.ISL,
         ICFPC.Tracer,
         ICFPC.Cost,
         ICFPC.Render,
-        ICFPC.Pairs
+        ICFPC.Pairs,
+        ICFPC.Graph
