@@ -4,7 +4,6 @@ import Control.Lens
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Except
-import Data.Either
 import Data.List
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as M
@@ -16,7 +15,7 @@ import Text.Read (readEither)
 
 import ICFPC.ISL qualified as I
 import ICFPC.Pairs
-import ICFPC.Tracer hiding (InvalidCommand(..))
+import ICFPC.Tracer
 
 type Id = Int
 
@@ -145,7 +144,7 @@ fromISL (I.Program prog) = usGraph $ foldl' goLine initState prog
         , f <- usFreshGraph -> us
         { usFreshGraph = f + 2
         , usRename = usRename & M.insert (0 NE.<| blk) f & M.insert (1 NE.<| blk) (f + 1)
-        , usGraph = usGraph & addNode ((case orient of I.X -> XCut; I.Y -> YCut) p l f (f + 1))
+        , usGraph = usGraph & addNode ((case orient of X -> XCut; Y -> YCut) p l f (f + 1))
         }
       I.PCut (toReverse -> blk) x y
         | p <- usRename M.! blk
@@ -218,12 +217,12 @@ toISL graph = case S.minView $ gDanglingUp graph of
         blk <- useName s
         rename t1 (0 NE.<| blk)
         rename t2 (1 NE.<| blk)
-        pure $ I.LCut (fromReverse blk) I.X x
+        pure $ I.LCut (fromReverse blk) X x
       YCut s y t1 t2 -> do
         blk <- useName s
         rename t1 (0 NE.<| blk)
         rename t2 (1 NE.<| blk)
-        pure $ I.LCut (fromReverse blk) I.Y y
+        pure $ I.LCut (fromReverse blk) Y y
       PCut s x y t1 t2 t3 t4 -> do
         blk <- useName s
         rename t1 (0 NE.<| blk)
@@ -252,8 +251,8 @@ type NState = M.Map Id Block
 
 data InvalidNode
   = NodeNotFound !Id
-  | TooThinToCut !Id !I.Orientation !(MinMax Int)
-  | CutLineNotInsideBlock !Id !I.Orientation !Int !(MinMax Int)
+  | TooThinToCut !Id !Orientation !(MinMax Int)
+  | CutLineNotInsideBlock !Id !Orientation !Int !(MinMax Int)
   | NotMergeable !Id !Block !Id !Block
   | InvalidSources ![Id]
   deriving (Eq, Ord, Show)
@@ -262,22 +261,22 @@ traceNode :: MonadCommand m => Node -> ExceptT InvalidNode (StateT NState m) ()
 traceNode = \case
   XCut s x t1 t2 -> do
     XY xs ys <- block s
-    xs' <- split x xs s I.X
+    xs' <- split x xs s X
     modify
       $ M.insert t1 (XY (lower xs') ys)
       . M.insert t2 (XY (upper xs') ys)
     lift . lift $ onXCut xs' ys
   YCut s y t1 t2 -> do
     XY xs ys <- block s
-    ys' <- split y ys s I.Y
+    ys' <- split y ys s Y
     modify
       $ M.insert t1 (XY xs (lower ys'))
       . M.insert t2 (XY xs (upper ys'))
     lift . lift $ onYCut xs ys'
   PCut s x y t1 t2 t3 t4 -> do
     XY xs ys <- block s
-    xs' <- split x xs s I.X
-    ys' <- split y ys s I.Y
+    xs' <- split x xs s X
+    ys' <- split y ys s Y
     modify
       $ M.insert t1 (XY (lower xs') (lower ys'))
       . M.insert t2 (XY (upper xs') (lower ys'))

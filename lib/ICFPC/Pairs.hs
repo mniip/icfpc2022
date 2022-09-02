@@ -1,5 +1,7 @@
 module ICFPC.Pairs where
 
+import Control.Monad.Reader.Class
+
 type X a = a
 
 type Y a = a
@@ -14,6 +16,15 @@ instance Applicative XY where
 instance Monad XY where
   return = pure
   XY x y >>= f = XY (case f x of XY x' _ -> x') (case f y of XY _ y' -> y')
+
+data Orientation
+  = X
+  | Y
+  deriving (Eq, Ord, Show)
+
+instance MonadReader Orientation XY where
+  ask = XY X Y
+  local f (XY x y) = XY (case f X of X -> x; Y -> y) (case f Y of X -> x; Y -> y)
 
 data MinMax a = MinMax !a !a
   deriving (Eq, Ord, Show, Functor)

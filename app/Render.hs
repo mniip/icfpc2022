@@ -7,7 +7,6 @@ import Text.Read
 import ICFPC.ISL
 import ICFPC.Pairs
 import ICFPC.Render
-import ICFPC.Tracer
 
 main :: IO ()
 main = do
