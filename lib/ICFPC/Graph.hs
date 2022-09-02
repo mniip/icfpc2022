@@ -4,12 +4,15 @@ import Control.Lens
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Except
+import Data.Either
 import Data.List
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as M
 import Data.Maybe
 import Data.Set qualified as S
+import Data.Text qualified as T
 import Data.Word
+import Text.Read (readEither)
 
 import ICFPC.ISL qualified as I
 import ICFPC.Pairs
@@ -20,11 +23,11 @@ type Id = Int
 data Node
   = XCut !Id !(X Int) {- -} !Id !Id
   | YCut !Id !(Y Int) {- -} !Id !Id
-  | PCut !Id !(XY Int) {- -} !Id !Id !Id !Id
+  | PCut !Id !(X Int) !(Y Int) {- -} !Id !Id !Id !Id
   | Color !Id !Word8 !Word8 !Word8 !Word8 {- -} !Id
   | Swap !Id !Id {- -} !Id !Id
   | Merge !Id !Id {- -} !Id
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Read)
 
 -- Invariants:
 -- gLinked, gDanglingDown, gDanglingUp are disjoint
@@ -43,7 +46,7 @@ nodeId :: Node -> Id
 nodeId = \case
   XCut i _ _ _ -> i
   YCut i _ _ _ -> i
-  PCut i _ _ _ _ _ -> i
+  PCut i _ _ _ _ _ _ -> i
   Color i _ _ _ _ _ -> i
   Swap i _ _ _ -> i
   Merge i _ _ -> i
@@ -52,7 +55,7 @@ nodeSources :: Node -> S.Set Id
 nodeSources = \case
   XCut i1 _ _ _ -> S.singleton i1
   YCut i1 _ _ _ -> S.singleton i1
-  PCut i1 _ _ _ _ _ -> S.singleton i1
+  PCut i1 _ _ _ _ _ _ -> S.singleton i1
   Color i1 _ _ _ _ _ -> S.singleton i1
   Swap i1 i2 _ _ -> S.fromList [i1, i2]
   Merge i1 i2 _ -> S.fromList [i1, i2]
@@ -61,7 +64,7 @@ nodeTargets :: Node -> S.Set Id
 nodeTargets = \case
   XCut _ _ i1 i2 -> S.fromList [i1, i2]
   YCut _ _ i1 i2 -> S.fromList [i1, i2]
-  PCut _ _ i1 i2 i3 i4 -> S.fromList [i1, i2, i3, i4]
+  PCut _ _ _ i1 i2 i3 i4 -> S.fromList [i1, i2, i3, i4]
   Color _ _ _ _ _ i1 -> S.singleton i1
   Swap _ _ i1 i2 -> S.fromList [i1, i2]
   Merge _ _ i1 -> S.singleton i1
@@ -81,15 +84,18 @@ freshId Graph{..} = 1 + (fromMaybe 0 (S.lookupMax gLinked)
   `max` fromMaybe 0 (S.lookupMax gDanglingUp))
 
 addNode :: Node -> Graph -> Graph
-addNode node Graph{..}
+addNode node graph = either error id $ addNode' node graph
+
+addNode' :: Node -> Graph -> Either String Graph
+addNode' node Graph{..}
   | not (edges `S.disjoint` gLinked)
-  = error $ "Nodes already linked: " <> show (S.toList $ edges `S.intersection` gLinked)
+  = Left $ "Nodes already linked: " <> show (S.toList $ edges `S.intersection` gLinked)
   | not (sources `S.disjoint` gDanglingUp)
-  = error $ "Connecting sources to sources: " <> show (S.toList $ sources `S.intersection` gDanglingUp)
+  = Left $ "Connecting sources to sources: " <> show (S.toList $ sources `S.intersection` gDanglingUp)
   | not (targets `S.disjoint` gDanglingDown)
-  = error $ "Connecting targets to targets: " <> show (S.toList $ targets `S.intersection` gDanglingDown)
+  = Left $ "Connecting targets to targets: " <> show (S.toList $ targets `S.intersection` gDanglingDown)
   | otherwise
-  = Graph
+  = Right Graph
     { gLinked = gLinked `S.union` linkedUp `S.union` linkedDown
     , gDanglingDown = (gDanglingDown `S.difference` linkedUp) `S.union` notLinkedDown
     , gDanglingUp = (gDanglingUp `S.difference` linkedDown) `S.union` notLinkedUp
@@ -146,7 +152,7 @@ fromISL (I.Program prog) = usGraph $ foldl' goLine initState prog
         , f <- usFreshGraph -> us
         { usFreshGraph = f + 4
         , usRename = usRename & M.insert (0 NE.<| blk) f & M.insert (1 NE.<| blk) (f + 1) & M.insert (2 NE.<| blk) (f + 2) & M.insert (3 NE.<| blk) (f + 3)
-        , usGraph = usGraph & addNode (PCut p (XY x y) f (f + 1) (f + 2) (f + 3))
+        , usGraph = usGraph & addNode (PCut p x y f (f + 1) (f + 2) (f + 3))
         }
       I.Color (toReverse -> blk) r g b a
         | p <- usRename M.! blk
@@ -218,7 +224,7 @@ toISL graph = case S.minView $ gDanglingUp graph of
         rename t1 (0 NE.<| blk)
         rename t2 (1 NE.<| blk)
         pure $ I.LCut (fromReverse blk) I.Y y
-      PCut s (XY x y) t1 t2 t3 t4 -> do
+      PCut s x y t1 t2 t3 t4 -> do
         blk <- useName s
         rename t1 (0 NE.<| blk)
         rename t2 (1 NE.<| blk)
@@ -249,6 +255,7 @@ data InvalidNode
   | TooThinToCut !Id !I.Orientation !(MinMax Int)
   | CutLineNotInsideBlock !Id !I.Orientation !Int !(MinMax Int)
   | NotMergeable !Id !Block !Id !Block
+  | InvalidSources ![Id]
   deriving (Eq, Ord, Show)
 
 traceNode :: MonadCommand m => Node -> ExceptT InvalidNode (StateT NState m) ()
@@ -267,7 +274,7 @@ traceNode = \case
       $ M.insert t1 (XY xs (lower ys'))
       . M.insert t2 (XY xs (upper ys'))
     lift . lift $ onYCut xs ys'
-  PCut s (XY x y) t1 t2 t3 t4 -> do
+  PCut s x y t1 t2 t3 t4 -> do
     XY xs ys <- block s
     xs' <- split x xs s I.X
     ys' <- split y ys s I.Y
@@ -312,3 +319,24 @@ traceNode = \case
       | qmax1 == qmin2 = Just $ MinMedMax qmin1 qmax1 qmax2
       | qmax2 == qmin1 = Just $ MinMedMax qmin2 qmax2 qmax1
       | otherwise = Nothing
+
+traceGraph :: MonadCommand m => Graph -> XY Int -> ExceptT InvalidNode (StateT NState m) ()
+traceGraph graph size = case S.minView $ gDanglingUp graph of
+  Nothing -> throwError $ InvalidSources []
+  Just (source, rest)
+    | not (S.null rest) -> throwError $ InvalidSources $ S.toList $ gDanglingUp graph
+    | otherwise -> do
+      modify $ M.insert source (MinMax 0 <$> size)
+      forM_ (topoSort graph) traceNode
+
+runTrace :: MonadCommand m => Graph -> XY Int -> m (Maybe InvalidNode, NState)
+runTrace graph size = runStateT (runExceptT $ traceGraph graph size) M.empty
+  <&> \case
+    (Left err, st) -> (Just err, st)
+    (Right _, st) -> (Nothing, st)
+
+printGraph :: Graph -> T.Text
+printGraph = T.unlines . map (T.pack . show) . topoSort
+
+parseGraph :: T.Text -> Either String Graph
+parseGraph text = foldl' (\mg b -> addNode' b =<< mg) (pure emptyGraph) =<< traverse (readEither . T.unpack) (T.lines text)

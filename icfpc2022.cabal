@@ -2,12 +2,6 @@ cabal-version:      2.4
 name:               icfpc2022
 version:            0.1.0.0
 
-executable run
-    main-is: Run.hs
-    build-depends: base
-    hs-source-dirs: app
-    default-language: GHC2021
-
 executable validate
     main-is: Validate.hs
     build-depends: base, icfpc2022, text
@@ -42,7 +36,8 @@ library
         mtl,
         lens,
         JuicyPixels,
-        vector
+        vector,
+        gloss
     hs-source-dirs: lib
     default-language: GHC2021
     extensions:
@@ -60,4 +55,5 @@ library
         ICFPC.Cost,
         ICFPC.Render,
         ICFPC.Pairs,
-        ICFPC.Graph
+        ICFPC.Graph,
+        ICFPC.Gloss

@@ -1,11 +1,9 @@
 import Data.Functor.Identity
 import Data.List.NonEmpty qualified as NE
-import Data.Monoid
 import Data.Text.IO qualified as T
 import System.Environment
 import Text.Read
 
-import ICFPC.Cost
 import ICFPC.ISL
 import ICFPC.Pairs
 import ICFPC.Tracer

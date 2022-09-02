@@ -18,6 +18,7 @@ data InvalidCommand
   | TooThinToCut !BlockId !Orientation !(MinMax Int)
   | CutLineNotInsideBlock !BlockId !Orientation !Int !(MinMax Int)
   | NotMergeable !BlockId !Block !BlockId !Block
+  | InvalidSwap !BlockId !Block !BlockId !Block
   deriving (Eq, Ord, Show)
 
 affixBlock :: Int -> BlockId -> BlockId
@@ -31,9 +32,6 @@ class Monad m => MonadCommand m where
   onSwap :: XY (MinMax Int) -> XY (MinMax Int) -> m ()
   onXMerge :: X (MinMedMax Int) -> Y (MinMax Int) -> m ()
   onYMerge :: X (MinMax Int) -> Y (MinMedMax Int) -> m ()
-
-initState :: XY Int -> BState
-initState (XY x y) = BState 0 1 $ M.singleton (BlockId $ 0 NE.:| []) (XY (MinMax 0 x) (MinMax 0 y))
 
 traceProgram :: MonadCommand m => Program -> ExceptT InvalidCommand (StateT BState m) ()
 traceProgram (Program ps) = forM_ ps $ \pl -> do
@@ -77,10 +75,13 @@ traceCommand = \case
   Swap blk1 blk2 -> do
     b1 <- block blk1
     b2 <- block blk2
-    modifyMap
-      $ M.insert blk1 b2
-      . M.insert blk2 b1
-    lift . lift $ onSwap b1 b2
+    if fmap mmLength b1 == fmap mmLength b2
+    then do
+      modifyMap
+        $ M.insert blk1 b2
+        . M.insert blk2 b1
+      lift . lift $ onSwap b1 b2
+    else throwError $ InvalidSwap blk1 b1 blk2 b2
   Merge blk1 blk2 -> do
     b1@(XY xs1 ys1) <- block blk1
     b2@(XY xs2 ys2) <- block blk2
@@ -120,6 +121,8 @@ runTrace prog size = runStateT (runExceptT (traceProgram prog)) (initState size)
   <&> \case
     (Left err, st) -> (Just err, st)
     (Right _, st) -> (Nothing, st)
+  where
+    initState (XY x y) = BState 0 1 $ M.singleton (BlockId $ 0 NE.:| []) (XY (MinMax 0 x) (MinMax 0 y))
 
 instance MonadCommand Identity where
   onXCut _ _ = pure ()

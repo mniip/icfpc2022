@@ -3,7 +3,6 @@ module ICFPC.Render where
 import Codec.Picture.Types
 import Control.Monad.ST
 import Control.Monad.Reader
-import Data.Vector.Storable.Mutable qualified as V
 
 import ICFPC.Tracer
 import ICFPC.Pairs
