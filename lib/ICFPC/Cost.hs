@@ -6,6 +6,7 @@ import Control.Monad.Except
 import Control.Monad.Writer
 import Control.Monad.Reader
 
+import ICFPC.Pairs
 import ICFPC.Tracer
 
 newtype CostT m a = CostT { runCostT :: m (a, Sum Int) }
@@ -17,11 +18,8 @@ newtype CostT m a = CostT { runCostT :: m (a, Sum Int) }
 addCost :: MonadReader (XY Int) m => (Int -> Int) -> CostT m ()
 addCost f = ask >>= \(XY width height) -> tell $ Sum $ f $ width * height
 
-len :: MinMax Int -> Int
-len (MinMax a b) = b - a
-
 area :: XY (MinMax Int) -> Int
-area (XY xs ys) = len xs * len ys
+area = xyArea . fmap mmLength
 
 roundDiv :: Int -> Int -> Int
 roundDiv x y = (x + (y `div` 2)) `div` y

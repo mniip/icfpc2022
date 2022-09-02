@@ -7,20 +7,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
 
 import ICFPC.ISL
-
-type X a = a
-type Y a = a
-data XY a = XY !a !a
-  deriving (Eq, Ord, Show)
-data MinMax a = MinMax !a !a
-  deriving (Eq, Ord, Show)
-data MinMedMax a = MinMedMax !a !a !a
-  deriving (Eq, Ord, Show)
-
-lower, upper, outer :: MinMedMax a -> MinMax a
-lower (MinMedMax a b _) = MinMax a b
-upper (MinMedMax _ a b) = MinMax a b
-outer (MinMedMax a _ b) = MinMax a b
+import ICFPC.Pairs
 
 type Block = XY (MinMax Int)
 

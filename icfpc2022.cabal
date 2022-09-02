@@ -56,4 +56,5 @@ library
         ICFPC.ISL,
         ICFPC.Tracer,
         ICFPC.Cost,
-        ICFPC.Render
+        ICFPC.Render,
+        ICFPC.Pairs

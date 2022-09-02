@@ -6,6 +6,7 @@ import Control.Monad.Reader
 import Data.Vector.Storable.Mutable qualified as V
 
 import ICFPC.Tracer
+import ICFPC.Pairs
 
 newtype RenderM s a = RenderM { runRenderM :: MutableImage s PixelRGBA8 -> ST s a }
   deriving (Functor, Applicative, Monad)
