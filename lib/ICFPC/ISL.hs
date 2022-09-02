@@ -3,17 +3,15 @@ module ICFPC.ISL where
 import Control.Applicative
 import Control.Monad.Except
 import Control.Monad.State
-import Control.Monad.Trans.State
-import Control.Monad.Trans.Except
 import Data.Char
 import Data.Functor.Identity
-import qualified Data.List.NonEmpty as NE
+import Data.List.NonEmpty qualified as NE
 import Data.Semigroup.Foldable
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as TL
-import qualified Data.Text.Lazy.Builder as TB
-import qualified Data.Text.Lazy.Builder.Int as TB
-import qualified Data.Text.Read as TR
+import Data.Text qualified as T
+import Data.Text.Lazy qualified as TL
+import Data.Text.Lazy.Builder qualified as TB
+import Data.Text.Lazy.Builder.Int qualified as TB
+import Data.Text.Read qualified as TR
 
 newtype BlockId = BlockId (NE.NonEmpty Int)
   deriving (Eq, Ord, Show)

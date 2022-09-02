@@ -1,16 +1,10 @@
 module ICFPC.Tracer where
 
 import Control.Lens
-import Control.Monad.Trans.Reader hiding (ask)
-import Control.Monad.Trans.State hiding (get, modify, state)
-import Control.Monad.Trans.Except
-import Control.Monad.Trans.Writer hiding (tell)
 import Control.Monad.Except
 import Control.Monad.State
-import Control.Monad.Writer
-import Control.Monad.Reader
-import qualified Data.Map as M
-import qualified Data.List.NonEmpty as NE
+import Data.List.NonEmpty qualified as NE
+import Data.Map qualified as M
 
 import ICFPC.ISL
 
@@ -136,6 +130,12 @@ traceCommand = \case
       | qmax2 == qmin1 = Just $ MinMedMax qmin2 qmax2 qmax1
       | otherwise = Nothing
 
+runTrace :: MonadCommand m => Program -> XY Int -> m (Maybe InvalidCommand, BState)
+runTrace prog size = runStateT (runExceptT (traceProgram prog)) (initState size)
+  <&> \case
+    (Left err, st) -> (Just err, st)
+    (Right _, st) -> (Nothing, st)
+
 instance MonadCommand Identity where
   onXCut _ _ = pure ()
   onYCut _ _ = pure ()
@@ -145,38 +145,11 @@ instance MonadCommand Identity where
   onXMerge _ _ = pure ()
   onYMerge _ _ = pure ()
 
-validate :: Program -> XY Int -> Maybe (InvalidCommand, Int)
-validate prog size = case runStateT (runExceptT (traceProgram prog)) (initState size) of
-  Identity (Left err, BState line _ _) -> Just (err, line)
-  Identity (Right _, _) -> Nothing
-
-newtype CostM a = CostM { runCostM :: Int -> (a, Int) }
-  deriving (Functor, Applicative, Monad, MonadReader Int, MonadWriter (Sum Int))
-    via (ReaderT Int (Writer (Sum Int)))
-
-addCost :: (Int -> Int) -> CostM ()
-addCost f = ask >>= \ar -> tell $ Sum $ f ar
-
-len :: MinMax Int -> Int
-len (MinMax a b) = b - a
-
-area :: XY (MinMax Int) -> Int
-area (XY xs ys) = len xs * len ys
-
-roundDiv :: Int -> Int -> Int
-roundDiv x y = (x + (y `div` 2)) `div` y
-
-instance MonadCommand CostM where
-  onXCut xs ys = addCost $ roundDiv $ 7 * area (XY (outer xs) ys)
-  onYCut xs ys = addCost $ roundDiv $ 7 * area (XY xs (outer ys))
-  onPCut (XY xs ys) = addCost $ roundDiv $ 10 * area (XY (outer xs) (outer ys))
-  onColor b _ = addCost $ roundDiv $ 5 * area b
-  onSwap b _ = addCost $ roundDiv $ 3 * area b
-  onXMerge xs ys = addCost $ roundDiv $ 1 * area (XY (outer xs) ys)
-  onYMerge xs ys = addCost $ roundDiv $ 1 * area (XY xs (outer ys))
-
-cost :: Program -> XY Int -> Either (InvalidCommand, Int) Int
-cost prog size@(XY width height)
-  = case runCostM (runStateT (runExceptT (traceProgram prog)) (initState size)) (width * height) of
-    ((Left err, BState line _ _), _) -> Left (err, line)
-    ((Right _, _), cost) -> Right cost
+instance MonadCommand ((->) r) where
+  onXCut _ _ = pure ()
+  onYCut _ _ = pure ()
+  onPCut _ = pure ()
+  onColor _ _ = pure ()
+  onSwap _ _ = pure ()
+  onXMerge _ _ = pure ()
+  onYMerge _ _ = pure ()

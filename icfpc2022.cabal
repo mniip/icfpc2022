@@ -31,8 +31,10 @@ library
         LambdaCase,
         DerivingVia,
         OverloadedStrings,
-        MultiWayIf
+        MultiWayIf,
+        UndecidableInstances
     exposed-modules:
         ICFPC.Lib,
         ICFPC.ISL,
-        ICFPC.Tracer
+        ICFPC.Tracer,
+        ICFPC.Cost

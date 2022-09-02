@@ -1,8 +1,10 @@
-import qualified Data.List.NonEmpty as NE
-import qualified Data.Text.IO as T
+import Data.List.NonEmpty qualified as NE
+import Data.Monoid
+import Data.Text.IO qualified as T
 import System.Environment
 import Text.Read
 
+import ICFPC.Cost
 import ICFPC.ISL
 import ICFPC.Tracer
 
@@ -12,8 +14,8 @@ main = map readMaybe <$> getArgs >>= \case
     t <- T.getContents
     case parseProgram t of
       Left err -> error err
-      Right prog -> case cost prog (XY x y) of
-        Right cost -> putStrLn $ "Program cost was: " <> show cost
-        Left (err, line) -> error $ show err <> "\nOn line " <> show (line + 1)
+      Right prog -> case runCostT (runTrace prog (XY x y)) (XY x y) of
+        ((Nothing, _), Sum cost) -> putStrLn $ "Program cost was: " <> show cost
+        ((Just err, BState line _ _), _) -> error $ show err <> "\nOn line " <> show (line + 1)
           <> "\n" <> case prog of Program ls -> show $ ls NE.!! line
   _ -> error "Usage: ./validate <width> <height>"
