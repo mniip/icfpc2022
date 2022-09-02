@@ -25,28 +25,29 @@ area (XY xs ys) = len xs * len ys
 
 roundDiv :: Int -> Int -> Int
 roundDiv x y = (x + (y `div` 2)) `div` y
+infixl 7 `roundDiv`
 
 instance (MonadReader (XY Int) m, MonadCommand m) => MonadCommand (CostT m) where
   onXCut xs ys = do
-    addCost $ roundDiv $ 7 * area (XY (outer xs) ys)
+    addCost $ \ar -> 7 * ar `roundDiv` area (XY (outer xs) ys)
     lift $ onXCut xs ys
   onYCut xs ys = do
-    addCost $ roundDiv $ 7 * area (XY xs (outer ys))
+    addCost $ \ar -> 7 * ar `roundDiv` area (XY xs (outer ys))
     lift $ onYCut xs ys
   onPCut b@(XY xs ys) = do
-    addCost $ roundDiv $ 10 * area (XY (outer xs) (outer ys))
+    addCost $ \ar -> 10 * ar `roundDiv` area (XY (outer xs) (outer ys))
     lift $ onPCut b
   onColor b rgba = do
-    addCost $ roundDiv $ 5 * area b
+    addCost $ \ar -> 5 * ar `roundDiv` area b
     lift $ onColor b rgba
   onSwap b1 b2 = do
-    addCost $ roundDiv $ 3 * area b1
+    addCost $ \ar -> 3 * ar `roundDiv` area b1
     lift $ onSwap b1 b2
   onXMerge xs ys = do
-    addCost $ roundDiv $ 1 * area (XY (outer xs) ys)
+    addCost $ \ar -> 1 * ar `roundDiv` area (XY (outer xs) ys)
     lift $ onXMerge xs ys
   onYMerge xs ys = do
-    addCost $ roundDiv $ 1 * area (XY xs (outer ys))
+    addCost $ \ar -> 1 * ar `roundDiv` area (XY xs (outer ys))
     lift $ onYMerge xs ys
 
 compareImages :: Image PixelRGBA8 -> Image PixelRGBA8 -> Int
