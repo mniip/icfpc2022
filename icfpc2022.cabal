@@ -44,6 +44,15 @@ executable pixel
     extensions:
         LambdaCase
 
+executable localmin
+    main-is: LocalMin.hs
+    build-depends: base, icfpc2022, text, JuicyPixels, lens, mtl
+    hs-source-dirs: app
+    default-language: GHC2021
+    extensions:
+        LambdaCase,
+        ViewPatterns
+
 library
     build-depends:
         base,

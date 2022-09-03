@@ -113,6 +113,12 @@ addNode' node Graph{..}
     !linkedDown = targets `S.intersection` gDanglingUp
     !notLinkedDown = targets `S.difference` gDanglingUp
 
+updateNode :: Node -> Node -> Graph -> Graph
+updateNode node node' graph = graph
+  { gDown = M.fromSet (const node') (nodeSources node') `M.union` gDown graph
+  , gUp = M.fromSet (const node') (nodeTargets node') `M.union` gUp graph
+  }
+
 type ReversedId = NE.NonEmpty Int
 
 toReverse :: I.BlockId -> ReversedId
