@@ -53,6 +53,22 @@ executable localmin
         LambdaCase,
         ViewPatterns
 
+executable scale
+    main-is: Scale.hs
+    build-depends: base, icfpc2022, text
+    hs-source-dirs: app
+    default-language: GHC2021
+    extensions:
+        LambdaCase
+
+executable clean
+    main-is: Clean.hs
+    build-depends: base, icfpc2022, text, JuicyPixels
+    hs-source-dirs: app
+    default-language: GHC2021
+    extensions:
+        LambdaCase
+
 library
     build-depends:
         base,
