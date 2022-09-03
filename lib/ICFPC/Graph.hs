@@ -17,31 +17,34 @@ import ICFPC.ISL qualified as I
 import ICFPC.Pairs
 import ICFPC.Tracer
 
-type Id = Int
+type EdgeId = Int
+type NodeId = Int
 
 data Node
-  = XCut !Id !(X Int) {- -} !Id !Id
-  | YCut !Id !(Y Int) {- -} !Id !Id
-  | PCut !Id !(X Int) !(Y Int) {- -} !Id !Id !Id !Id
-  | Color !Id !Word8 !Word8 !Word8 !Word8 {- -} !Id
-  | Swap !Id !Id {- -} !Id !Id
-  | Merge !Id !Id {- -} !Id
+  = XCut !EdgeId !(X Int) {- -} !EdgeId !EdgeId
+  | YCut !EdgeId !(Y Int) {- -} !EdgeId !EdgeId
+  | PCut !EdgeId !(X Int) !(Y Int) {- -} !EdgeId !EdgeId !EdgeId !EdgeId
+  | Color !EdgeId !Word8 !Word8 !Word8 !Word8 {- -} !EdgeId
+  | Swap !EdgeId !EdgeId {- -} !EdgeId !EdgeId
+  | Merge !EdgeId !EdgeId {- -} !EdgeId
   deriving (Eq, Ord, Show, Read)
 
 -- Invariants:
 -- gLinked, gDanglingDown, gDanglingUp are disjoint
 -- keys of gDown are exactly gLinked + gDanglingUp
 -- keys of gUp are exactly gLinked + gDanglingDown
+-- 0 is the root
 data Graph = Graph
-  { gLinked :: !(S.Set Id)
-  , gDanglingDown :: !(S.Set Id)
-  , gDanglingUp :: !(S.Set Id)
-  , gDown :: !(M.Map Id Node)
-  , gUp :: !(M.Map Id Node)
+  { gLinked :: !(S.Set EdgeId)
+  , gDanglingDown :: !(S.Set EdgeId)
+  , gDanglingUp :: !(S.Set EdgeId)
+  , gDown :: !(M.Map EdgeId Node)
+  , gUp :: !(M.Map EdgeId Node)
   }
   deriving (Show)
 
-nodeId :: Node -> Id
+-- a node is identified by the id of its first edge
+nodeId :: Node -> NodeId
 nodeId = \case
   XCut i _ _ _ -> i
   YCut i _ _ _ -> i
@@ -50,7 +53,7 @@ nodeId = \case
   Swap i _ _ _ -> i
   Merge i _ _ -> i
 
-nodeSources :: Node -> S.Set Id
+nodeSources :: Node -> S.Set EdgeId
 nodeSources = \case
   XCut i1 _ _ _ -> S.singleton i1
   YCut i1 _ _ _ -> S.singleton i1
@@ -59,7 +62,7 @@ nodeSources = \case
   Swap i1 i2 _ _ -> S.fromList [i1, i2]
   Merge i1 i2 _ -> S.fromList [i1, i2]
 
-nodeTargets :: Node -> S.Set Id
+nodeTargets :: Node -> S.Set EdgeId
 nodeTargets = \case
   XCut _ _ i1 i2 -> S.fromList [i1, i2]
   YCut _ _ i1 i2 -> S.fromList [i1, i2]
@@ -71,13 +74,13 @@ nodeTargets = \case
 emptyGraph :: Graph
 emptyGraph = Graph
   { gLinked = S.empty
-  , gDanglingDown = S.empty
+  , gDanglingDown = S.singleton 0
   , gDanglingUp = S.empty
   , gDown = M.empty
   , gUp = M.empty
   }
 
-freshId :: Graph -> Id
+freshId :: Graph -> EdgeId
 freshId Graph{..} = 1 + (fromMaybe 0 (S.lookupMax gLinked)
   `max` fromMaybe 0 (S.lookupMax gDanglingDown)
   `max` fromMaybe 0 (S.lookupMax gDanglingUp))
@@ -121,7 +124,7 @@ fromReverse blk = I.BlockId $ NE.reverse blk
 data UnfoldState = UnfoldState
   { usFreshGraph :: !Int
   , usFreshISL :: !Int
-  , usRename :: M.Map ReversedId Id
+  , usRename :: M.Map ReversedId EdgeId
   , usGraph :: Graph
   }
   deriving (Show)
@@ -178,6 +181,18 @@ fromISL (I.Program prog) = usGraph $ foldl' goLine initState prog
         , usGraph = usGraph & addNode (Merge p1 p2 f)
         }
 
+reachableFrom :: EdgeId -> Graph -> S.Set NodeId
+reachableFrom initial Graph{..} = execState (go initial) S.empty
+  where
+    go src = case M.lookup src gDown of
+      Nothing -> pure ()
+      Just node
+        | i <- nodeId node -> get >>= \s -> if i `S.member` s
+          then pure ()
+          else do
+            put (S.insert i s)
+            forM_ (nodeTargets node) go
+
 topoSort :: Graph -> [Node]
 topoSort Graph{..} = (`appEndo` []) . execWriter $ evalStateT (forM_ gDanglingDown go) S.empty
   where
@@ -191,24 +206,26 @@ topoSort Graph{..} = (`appEndo` []) . execWriter $ evalStateT (forM_ gDanglingDo
             forM_ (nodeSources node) go
             tell $ Endo (node :)
 
+topoRank :: Graph -> M.Map NodeId Int
+topoRank graph = execState (forM_ (topoSort graph) go) M.empty
+  where
+    go node = modify $ \m -> let hs = mapMaybe ((`M.lookup` m) . nodeId <=< (`M.lookup` gUp graph)) $ S.toList $ nodeSources node
+      in M.insert (nodeId node) (maximum $ 0 : map (1 +) hs) m
+
 data FoldState = FoldState
   { fsFresh :: !Int
-  , fsRename :: !(M.Map Id ReversedId)
+  , fsRename :: !(M.Map EdgeId ReversedId)
   }
 
 toISL :: Graph -> I.Program
-toISL graph = case S.minView $ gDanglingUp graph of
-  Nothing -> error "No nodes dangling up"
-  Just (source, rest)
-    | not (S.null rest) -> error $ "Multiple nodes dangling up, which one to start with? "
-      <> show (S.toList $ gDanglingUp graph)
-    | otherwise -> I.Program . fmap I.Command . NE.fromList
-      $ evalState (forM (topoSort graph) go) (initState source)
+toISL graph = I.Program . fmap I.Command . NE.fromList
+  $ evalState (forM (filter ((`S.member` reachable) . nodeId) $ topoSort graph) go) initState
   where
-    initState source = FoldState
+    initState = FoldState
       { fsFresh = 1
-      , fsRename = M.singleton source $ NE.singleton 0
+      , fsRename = M.singleton 0 $ NE.singleton 0
       }
+    reachable = reachableFrom 0 graph
     useName t = state $ \fs -> (fsRename fs M.! t, fs { fsRename = M.delete t $ fsRename fs })
     nextFresh = state $ \fs -> (fsFresh fs, fs { fsFresh = fsFresh fs + 1 })
     rename t blk = modify $ \fs -> fs { fsRename = M.insert t blk $ fsRename fs }
@@ -247,14 +264,13 @@ toISL graph = case S.minView $ gDanglingUp graph of
         rename t (NE.singleton blk)
         pure $ I.Merge (fromReverse blk1) (fromReverse blk2)
 
-type NState = M.Map Id Block
+type NState = M.Map EdgeId Block
 
 data InvalidNode
-  = NodeNotFound !Id
-  | TooThinToCut !Id !Orientation !(MinMax Int)
-  | CutLineNotInsideBlock !Id !Orientation !Int !(MinMax Int)
-  | NotMergeable !Id !Block !Id !Block
-  | InvalidSources ![Id]
+  = NodeNotFound !EdgeId
+  | TooThinToCut !EdgeId !Orientation !(MinMax Int)
+  | CutLineNotInsideBlock !EdgeId !Orientation !Int !(MinMax Int)
+  | NotMergeable !EdgeId !Block !EdgeId !Block
   deriving (Eq, Ord, Show)
 
 traceNode :: MonadCommand m => Node -> ExceptT InvalidNode (StateT NState m) ()
@@ -320,13 +336,9 @@ traceNode = \case
       | otherwise = Nothing
 
 traceGraph :: MonadCommand m => Graph -> XY Int -> ExceptT InvalidNode (StateT NState m) ()
-traceGraph graph size = case S.minView $ gDanglingUp graph of
-  Nothing -> throwError $ InvalidSources []
-  Just (source, rest)
-    | not (S.null rest) -> throwError $ InvalidSources $ S.toList $ gDanglingUp graph
-    | otherwise -> do
-      modify $ M.insert source (MinMax 0 <$> size)
-      forM_ (topoSort graph) traceNode
+traceGraph graph size = do
+  modify $ M.insert 0 (MinMax 0 <$> size)
+  forM_ (topoSort graph) traceNode
 
 runTrace :: MonadCommand m => Graph -> XY Int -> m (Maybe InvalidNode, NState)
 runTrace graph size = runStateT (runExceptT $ traceGraph graph size) M.empty

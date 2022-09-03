@@ -54,8 +54,8 @@ mkMouseData sz sdata ms = MouseData
 
 data GraphData = GraphData
   { _graph :: !Graph
-  , _allBlockMap :: !(M.Map Id Block)
-  , _blockMap :: !(M.Map Id Block)
+  , _allBlockMap :: !(M.Map EdgeId Block)
+  , _blockMap :: !(M.Map EdgeId Block)
   , _resultImage :: !(Image PixelRGBA8)
   , _resultBitmap :: !Picture
   }
@@ -80,7 +80,7 @@ data World = World
   , _graphData :: !GraphData
   , _screenData :: !ScreenData
   , _mouseData :: !MouseData
-  , _hovering :: !(Maybe Id)
+  , _hovering :: !(Maybe EdgeId)
   }
 
 makeLenses ''World
