@@ -7,7 +7,7 @@ type X a = a
 type Y a = a
 
 data XY a = XY !a !a
-  deriving (Eq, Ord, Show, Functor)
+  deriving (Eq, Ord, Show, Functor, Foldable)
 
 instance Applicative XY where
   pure a = XY a a
@@ -27,7 +27,7 @@ instance MonadReader Orientation XY where
   local f (XY x y) = XY (case f X of X -> x; Y -> y) (case f Y of X -> x; Y -> y)
 
 data MinMax a = MinMax !a !a
-  deriving (Eq, Ord, Show, Functor)
+  deriving (Eq, Ord, Show, Functor, Foldable)
 
 instance Applicative MinMax where
   pure a = MinMax a a
@@ -38,7 +38,7 @@ instance Monad MinMax where
   MinMax x y >>= f = MinMax (case f x of MinMax x' _ -> x') (case f y of MinMax _ y' -> y')
 
 data MinMedMax a = MinMedMax !a !a !a
-  deriving (Eq, Ord, Show, Functor)
+  deriving (Eq, Ord, Show, Functor, Foldable)
 
 instance Applicative MinMedMax where
   pure a = MinMedMax a a a
@@ -61,3 +61,6 @@ mmLength (MinMax a b) = b - a
 
 xyArea :: Num a => XY a -> a
 xyArea (XY a b) = a * b
+
+between :: Ord a => a -> MinMax a -> Bool
+between a (MinMax b c) = b <= a && a < c

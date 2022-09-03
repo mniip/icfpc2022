@@ -6,7 +6,6 @@ import Text.Read
 
 import ICFPC.ISL
 import ICFPC.Pairs
-import ICFPC.Tracer
 
 main :: IO ()
 main = map readMaybe <$> getArgs >>= \case
