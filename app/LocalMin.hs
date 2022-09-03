@@ -43,7 +43,7 @@ main = do
 
           go cost0 step graph0 = do
             let
-              (graph, cost) = goColor cost0 graph0
+              (graph, cost) = (graph0, cost0) -- goColor cost0 graph0
               graphs = mapMaybe tryCost $ concat $ shrinkNode step graph <$> topoSort graph
 
             case graphs of
@@ -98,4 +98,14 @@ shrinkNode step graph = \case
     , updateNode n (PCut s x (y - step) t1 t2 t3 t4) graph
     , updateNode n (PCut s x (y + step) t1 t2 t3 t4) graph
     ] 
+  n@(Color s r g b a t) -> let step' = fromIntegral step in concat
+    [ [updateNode n (Color s (r - step') g b a t) graph | r >= step']
+    , [updateNode n (Color s (r + step') g b a t) graph | r <= 255 - step']
+    , [updateNode n (Color s r (g - step') b a t) graph | g >= step']
+    , [updateNode n (Color s r (g + step') b a t) graph | g <= 255 - step']
+    , [updateNode n (Color s r g (b - step') a t) graph | b >= step']
+    , [updateNode n (Color s r g (b + step') a t) graph | b <= 255 - step']
+    , [updateNode n (Color s r g b (a - step') t) graph | a >= step']
+    , [updateNode n (Color s r g b (a + step') t) graph | a <= 255 - step']
+    ]
   _ -> []
