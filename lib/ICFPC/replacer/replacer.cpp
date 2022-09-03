@@ -249,6 +249,7 @@ void id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_b
     for (int j = i; j < id.size(); ++j) end.push_back(id[j]);
 
     if (start_n == n) {
+        warning(replacement != "");
         id = replacement;
         id += end;
     } else if (start_n > n) {
@@ -258,11 +259,14 @@ void id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_b
 }
 
 int main(int n_args, char **args) {
+    std::string text;
     if (n_args != 2) {
-        printf("Usage %s <input.isl>.\n Make some optimisations to input file and print the result to stdout.\n", args[0]);
-        return 0;
-     }
-    std::string text = read_entire_file(args[1]);
+        //printf("Usage %s <input.isl>.\n Make some optimisations to input file and print the result to stdout.\n", args[0]);
+        //return 0;
+        text = read_entire_file("09.isl");
+    } else {
+        text = read_entire_file(args[1]);
+    }
 
     std::vector<std::string> lines = lines_of_the_string(text);
     std::vector<Command> commands;
@@ -275,6 +279,7 @@ int main(int n_args, char **args) {
 
     std::cerr << "size = " << commands.size() << "\n";
 
+    int n_optimized = 0;
     for (;;) {
         /*
         std::cout << "#################################################\n";
@@ -329,6 +334,7 @@ int main(int n_args, char **args) {
                 }
 
                 found_something = true;
+                ++n_optimized;
                 break;
             }
         }
@@ -360,12 +366,133 @@ int main(int n_args, char **args) {
                 commands[j] = std::move(commands[j+1]);
             }
             commands.pop_back();
+
             found_something = true;
+            ++n_optimized;
+        }
+        if (!found_something) break;
+    }
+
+    for (;;) {
+        /*
+        std::cout << "#################################################\n";
+        for (Command& c : commands) {
+            std::cout << command_to_string(&c) << "\n";
+        }
+        */
+
+        int merge_new_id = 1;
+        bool found_something = false;
+        for (int i = 0; i+1 < commands.size(); ++i) {
+            std::string id;
+            {
+                Command *c0 = &commands[i];
+                Command *c1 = &commands[i+1];
+                if (c0->type == cMERGE) {
+                    merge_new_id += 1;
+                    continue;
+                }
+                if (c0->type != cCUT_LINE) continue;  // todo cCUT_POINT
+                if (c1->type != cMERGE) continue;
+
+                id = c0->block_id;
+                if (c1->block_id != id + ".0" && c1->block_id != id + ".1") continue;
+                for (int j = i; j + 2 < commands.size(); ++j) {
+                    commands[j] = std::move(commands[j+2]);
+                }
+                commands.pop_back();
+                commands.pop_back();
+            }
+
+            for (int j = i; j < commands.size(); ++j) {
+                Command *c = &commands[j];
+                id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id, merge_new_id, id);
+                if (c->block_id2 != "") {
+                    id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id2, merge_new_id, id);
+                }
+            }
+            found_something = true;
+            ++n_optimized;
+        }
+        if (!found_something) break;
+    }
+
+    for (;;) {
+        /*
+        std::cout << "#################################################\n";
+        for (Command& c : commands) {
+            std::cout << command_to_string(&c) << "\n";
+        }
+        */
+
+
+        bool found_something = false;
+        int merge_new_id = 1;
+        for (int i = 0; i + 4 < commands.size(); ++i) {
+            //std::cerr << "check from " << i << "\n";
+            Command *cut0   = &commands[i];
+            Command *cut1   = &commands[i+1];
+            Command *color  = &commands[i+2];
+            Command *merge1 = &commands[i+3];
+            Command *merge0 = &commands[i+4];
+            if (cut0->type == cMERGE) {
+                merge_new_id += 1;
+                continue;
+            }
+
+            if (cut0->type != cCUT_LINE) continue;
+            if (cut1->type != cCUT_LINE) continue;
+            if (color->type != cSET_COLOR) continue;
+            if (merge1->type != cMERGE) continue;
+            if (merge0->type != cMERGE) continue;
+
+            std::string const& id   = cut0->block_id;
+            char               axis = cut0->axis;
+            if (cut1->block_id != id + ".1") continue; // TODO: X0 > X1
+            if (color->block_id != id + ".1.1") continue;
+            if (cut1->axis != axis) continue;
+            if (axis == 'X') if (cut1->x < cut0->x) continue;
+            if (axis == 'Y') if (cut1->y < cut0->y) continue;
+            if (merge0->block_id != id + ".0" && merge0->block_id2 != id + ".0") continue; // 0 так как чекаем только увеличение оффсета
+
+            if (merge1->block_id != cut1->block_id + ".0" && merge1->block_id2 != cut1->block_id + ".0") continue;
+            if (merge1->block_id != cut1->block_id + ".1" && merge1->block_id2 != cut1->block_id + ".1") continue;
+            if (merge0->block_id != std::to_string(merge_new_id) && merge0->block_id2 != std::to_string(merge_new_id)) continue;
+
+            cut0->y = cut1->y;
+            cut0->x = cut1->x;
+
+            *cut1 = std::move(*color);
+            cut1->block_id = id + ".1";
+
+            color->type      = cMERGE;
+            color->block_id  = id + ".0";
+            color->block_id2 = id + ".1";
+
+            for (int j = i + 3; j + 2 < commands.size(); ++j) {
+                //if (j <= i + 5) std::cerr << command_to_string(&commands[j]) << " was optimized " << command_to_string(&commands[j+2]) << "took it's place\n";
+                commands[j] = std::move(commands[j+2]);
+            }
+            commands.pop_back();
+            commands.pop_back();
+
+            for (int j = i + 3; j < commands.size(); ++j) {
+                Command *c = &commands[j];
+                id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id, merge_new_id, "");
+                if (c->block_id2 != "") {
+                    id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id2, merge_new_id, "");
+                }
+            }
+
+            found_something = true;
+            ++n_optimized;
+            break;
         }
         if (!found_something) break;
     }
 
     //std::cout << "+++\n";
+    std::cerr << "optimized " << n_optimized << " things\n";
     for (Command& c : commands) {
         std::cout << command_to_string(&c) << "\n";
     }
