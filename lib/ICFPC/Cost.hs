@@ -42,10 +42,10 @@ instance (MonadReader (XY Int) m, MonadCommand m) => MonadCommand (CostT m) wher
     addCost $ \ar -> 3 * ar `roundDiv` area b1
     lift $ onSwap b1 b2
   onXMerge xs ys = do
-    addCost $ \ar -> 1 * ar `roundDiv` area (XY (outer xs) ys)
+    addCost $ \ar -> 1 * ar `roundDiv` max (area (XY (lower xs) ys)) (area (XY (upper xs) ys))
     lift $ onXMerge xs ys
   onYMerge xs ys = do
-    addCost $ \ar -> 1 * ar `roundDiv` area (XY xs (outer ys))
+    addCost $ \ar -> 1 * ar `roundDiv` max (area (XY xs (lower ys))) (area (XY xs (upper ys)))
     lift $ onYMerge xs ys
 
 compareImages :: Image PixelRGBA8 -> Image PixelRGBA8 -> Int
