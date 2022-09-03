@@ -17,7 +17,8 @@ import ICFPC.Cost
 import ICFPC.Pairs
 
 main :: IO ()
-main = do
+main = undefined
+{- do
   getArgs >>= \case
     [sStep, input] | Just step <- readMaybe sStep, step >= 0 -> readImage input >>= \case
       Left err -> error err
@@ -74,9 +75,9 @@ drawWithStep step image' = do
     height = imageHeight image
     (((left, down), (right, up)), background) = boundingBox image
 
-    tryCost g = case runRender (XY width height) $ runCostT (runTrace g (XY width height)) of
-                  (((Nothing, _), Sum cost), image'') -> Just $ (g, cost + compareImages image' image'')
-                  (((Just e, _), _), _) -> Nothing
+    tryCost g = case tryScoreGraph image g of
+      Left _ -> Nothing
+      Right score -> Just (g, score)
 
     fresh = _2 <+= 1
     node n = modify $ _1 %~ addNode n
@@ -164,3 +165,4 @@ median xs = fromTuple $ go 100 (sumDist average) average
       in if best < oldDist
          then go step best bestPix
          else if step > 1 then go ((step+1) `div` 2) oldDist pix else pix
+-}

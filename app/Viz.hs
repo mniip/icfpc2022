@@ -54,8 +54,8 @@ mkMouseData sz sdata ms = MouseData
 
 data GraphData = GraphData
   { _graph :: !Graph
-  , _allBlockMap :: !(M.Map EdgeId (XY (MinMax Int)))
-  , _blockMap :: !(M.Map EdgeId (XY (MinMax Int)))
+  , _allBlockMap :: !(M.Map NodeId (XY (MinMax Int)))
+  , _blockMap :: !(M.Map NodeId (XY (MinMax Int)))
   , _resultImage :: !(Image PixelRGBA8)
   , _resultBitmap :: !Picture
   }
@@ -66,11 +66,13 @@ mkGraphData :: XY Int -> Graph -> GraphData
 mkGraphData sz gr = GraphData
   { _graph = gr
   , _allBlockMap = abm
-  , _blockMap = M.restrictKeys abm (gDanglingDown gr)
+  , _blockMap = abm
   , _resultImage = image
   , _resultBitmap = imageToGloss image
   }
-  where ((_, abm), image) = runRender sz $ runTrace gr sz
+  where
+    image = renderGraph sz gr
+    abm = M.empty
 
 data World = World
   { _outputImage :: !(Maybe (Image PixelRGBA8))
@@ -80,7 +82,7 @@ data World = World
   , _graphData :: !GraphData
   , _screenData :: !ScreenData
   , _mouseData :: !MouseData
-  , _hovering :: !(Maybe EdgeId)
+  , _hovering :: !(Maybe NodeId)
   }
 
 makeLenses ''World

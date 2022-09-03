@@ -46,12 +46,13 @@ executable pixel
 
 executable localmin
     main-is: LocalMin.hs
-    build-depends: base, icfpc2022, text, JuicyPixels, lens, mtl
+    build-depends: base, icfpc2022, text, JuicyPixels, lens, mtl, containers
     hs-source-dirs: app
     default-language: GHC2021
     extensions:
         LambdaCase,
-        ViewPatterns
+        ViewPatterns,
+        TypeFamilies
 
 executable scale
     main-is: Scale.hs
@@ -92,7 +93,9 @@ library
         UndecidableInstances,
         RecordWildCards,
         ViewPatterns,
-        TemplateHaskell
+        TemplateHaskell,
+        TypeFamilies,
+        DataKinds
     exposed-modules:
         ICFPC.Lib,
         ICFPC.ISL,

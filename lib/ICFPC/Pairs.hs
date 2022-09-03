@@ -1,5 +1,6 @@
 module ICFPC.Pairs where
 
+import GHC.TypeNats
 import Control.Monad.Reader.Class
 
 type X a = a
@@ -64,3 +65,53 @@ xyArea (XY a b) = a * b
 
 between :: Ord a => a -> MinMax a -> Bool
 between a (MinMax b c) = b <= a && a < c
+
+data family Wide (n :: Nat) (a :: *) :: *
+
+data instance Wide 0 a = Wide0
+  deriving (Eq, Ord, Show, Functor, Foldable)
+
+instance Applicative (Wide 0) where
+  pure _ = Wide0
+  _ <*> _ = Wide0
+
+instance Monad (Wide 0) where
+  return = pure
+  _ >>= _ = Wide0
+
+newtype instance Wide 1 a = Wide1 a
+  deriving (Eq, Ord, Show, Functor, Foldable)
+
+instance Applicative (Wide 1) where
+  pure a = Wide1 a
+  Wide1 f <*> Wide1 x = Wide1 (f x)
+
+instance Monad (Wide 1) where
+  return = pure
+  Wide1 x >>= f = Wide1 (case f x of Wide1 x' -> x')
+
+data instance Wide 2 a = Wide2 !a !a
+  deriving (Eq, Ord, Show, Functor, Foldable)
+
+instance Applicative (Wide 2) where
+  pure a = Wide2 a a
+  Wide2 f g <*> Wide2 x y = Wide2 (f x) (g y)
+
+instance Monad (Wide 2) where
+  return = pure
+  Wide2 x y >>= f = Wide2 (case f x of Wide2 x' _ -> x') (case f y of Wide2 _ y' -> y')
+
+data instance Wide 4 a = Wide4 !a !a !a !a
+  deriving (Eq, Ord, Show, Functor, Foldable)
+
+instance Applicative (Wide 4) where
+  pure a = Wide4 a a a a
+  Wide4 f g h k <*> Wide4 x y z w = Wide4 (f x) (g y) (h z) (k w)
+
+instance Monad (Wide 4) where
+  return = pure
+  Wide4 x y z w >>= f = Wide4
+    (case f x of Wide4 x' _ _ _ -> x')
+    (case f y of Wide4 _ y' _ _ -> y')
+    (case f z of Wide4 _ _ z' _ -> z')
+    (case f w of Wide4 _ _ _ w' -> w')

@@ -1,4 +1,6 @@
+import Control.Lens
 import Data.List
+import Data.Map.Strict qualified as M
 import Data.Maybe
 import Data.Ord
 import Data.Text.IO qualified as T
@@ -15,14 +17,13 @@ main = getArgs >>= \case
   [input, output] -> do
     image <- readImageRGBA8 input
     let
-      tryCost graph = case I.tryScoreProgram image $ toISL graph of
+      tryCost graph = case tryScoreGraph image graph of
         Left _ -> Nothing
         Right cost -> Just (graph, cost)
 
       -- Optimize only color nodes
       goColor cost graph = do
-        let
-          graphs = mapMaybe tryCost $ concat $ shrinkColorNode graph <$> topoSort graph
+        let graphs = mapMaybe tryCost $ shrinkGraphWith shrinkColorNode graph
 
         case graphs of
           [] -> (graph, cost)
@@ -33,7 +34,7 @@ main = getArgs >>= \case
       go cost0 step graph0 = do
         let
           (graph, cost) = (graph0, cost0) -- goColor cost0 graph0
-          graphs = mapMaybe tryCost $ concat $ shrinkNode step graph <$> topoSort graph
+          graphs = mapMaybe tryCost $ shrinkGraphWith (shrinkNode step) graph
 
         case graphs of
           [] -> if step > 1 then go cost (step-1) graph else hPutStrLn stderr "No shrinks"
@@ -54,44 +55,47 @@ main = getArgs >>= \case
     go initCost 40 initGraph
   _ -> error "Usage: local <input.png> <inout.isl>"
 
-shrinkColorNode :: Graph -> Node -> [Graph]
-shrinkColorNode graph = \case
-  n@(Color s (unpackRGBA -> (r, g, b, a))  t) -> let step' = 1 in concat
-    [ [updateNode n (Color s (packRGBA (r - step', g, b, a)) t) graph | r >= step']
-    , [updateNode n (Color s (packRGBA (r + step', g, b, a)) t) graph | r <= 255 - step']
-    , [updateNode n (Color s (packRGBA (r, g - step', b, a)) t) graph | g >= step']
-    , [updateNode n (Color s (packRGBA (r, g + step', b, a)) t) graph | g <= 255 - step']
-    , [updateNode n (Color s (packRGBA (r, g, b - step', a)) t) graph | b >= step']
-    , [updateNode n (Color s (packRGBA (r, g, b + step', a)) t) graph | b <= 255 - step']
-    , [updateNode n (Color s (packRGBA (r, g, b, a - step')) t) graph | a >= step']
-    , [updateNode n (Color s (packRGBA (r, g, b, a + step')) t) graph | a <= 255 - step']
+shrinkGraphWith :: (forall n m. Node n m -> [Node n m]) -> Graph -> [Graph]
+shrinkGraphWith shr graph = topoSort graph >>= \i -> modifyNode i shr graph
+
+shrinkColorNode :: Node n m -> [Node n m]
+shrinkColorNode = \case
+  Color (unpackRGBA -> (r, g, b, a)) -> let step' = 1 in concat
+    [ [Color $ packRGBA (r - step', g, b, a) | r >= step']
+    , [Color $ packRGBA (r + step', g, b, a) | r <= 255 - step']
+    , [Color $ packRGBA (r, g - step', b, a) | g >= step']
+    , [Color $ packRGBA (r, g + step', b, a) | g <= 255 - step']
+    , [Color $ packRGBA (r, g, b - step', a) | b >= step']
+    , [Color $ packRGBA (r, g, b + step', a) | b <= 255 - step']
+    , [Color $ packRGBA (r, g, b, a - step') | a >= step']
+    , [Color $ packRGBA (r, g, b, a + step') | a <= 255 - step']
     ]
   _ -> []
 
-shrinkNode :: Int -> Graph -> Node -> [Graph]
-shrinkNode step graph = \case
-  n@(XCut s x t1 t2) ->
-    [ updateNode n (XCut s (x - step) t1 t2) graph
-    , updateNode n (XCut s (x + step) t1 t2) graph
+shrinkNode :: Int -> Node n m -> [Node n m]
+shrinkNode step = \case
+  XCut x ->
+    [ XCut (x - step)
+    , XCut (x + step)
     ]
-  n@(YCut s y t1 t2) ->
-    [ updateNode n (YCut s (y - step) t1 t2) graph
-    , updateNode n (YCut s (y + step) t1 t2) graph
+  YCut y ->
+    [ YCut (y - step)
+    , YCut (y + step)
     ]
-  n@(PCut s x y t1 t2 t3 t4) ->
-    [ updateNode n (PCut s (x - step) y t1 t2 t3 t4) graph
-    , updateNode n (PCut s (x + step) y t1 t2 t3 t4) graph
-    , updateNode n (PCut s x (y - step) t1 t2 t3 t4) graph
-    , updateNode n (PCut s x (y + step) t1 t2 t3 t4) graph
+  PCut x y ->
+    [ PCut (x - step) y
+    , PCut (x + step) y
+    , PCut x (y - step)
+    , PCut x (y + step)
     ]
-  n@(Color s (unpackRGBA -> (r, g, b, a)) t) -> let step' = fromIntegral step in concat
-    [ [updateNode n (Color s (packRGBA (r - step', g, b, a)) t) graph | r >= step']
-    , [updateNode n (Color s (packRGBA (r + step', g, b, a)) t) graph | r <= 255 - step']
-    , [updateNode n (Color s (packRGBA (r, g - step', b, a)) t) graph | g >= step']
-    , [updateNode n (Color s (packRGBA (r, g + step', b, a)) t) graph | g <= 255 - step']
-    , [updateNode n (Color s (packRGBA (r, g, b - step', a)) t) graph | b >= step']
-    , [updateNode n (Color s (packRGBA (r, g, b + step', a)) t) graph | b <= 255 - step']
-    , [updateNode n (Color s (packRGBA (r, g, b, a - step')) t) graph | a >= step']
-    , [updateNode n (Color s (packRGBA (r, g, b, a + step')) t) graph | a <= 255 - step']
+  Color (unpackRGBA -> (r, g, b, a)) -> let step' = fromIntegral step in concat
+    [ [Color $ packRGBA (r - step', g, b, a) | r >= step']
+    , [Color $ packRGBA (r + step', g, b, a) | r <= 255 - step']
+    , [Color $ packRGBA (r, g - step', b, a) | g >= step']
+    , [Color $ packRGBA (r, g + step', b, a) | g <= 255 - step']
+    , [Color $ packRGBA (r, g, b - step', a) | b >= step']
+    , [Color $ packRGBA (r, g, b + step', a) | b <= 255 - step']
+    , [Color $ packRGBA (r, g, b, a - step') | a >= step']
+    , [Color $ packRGBA (r, g, b, a + step') | a <= 255 - step']
     ]
   _ -> []
