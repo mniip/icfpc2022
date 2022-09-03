@@ -44,7 +44,9 @@ main = do
                 (((Nothing, _), Sum cost), image') -> Just (cost + compareImages image image', prg)
                 (((Just err, BState line _ _), _), _) -> Nothing
             tries prg = mapMaybe score (map (toProg . removeTail) . removeColors $ commands prg)
-            improve prg = snd . minimumBy (compare `on` fst) $ tries prg
+            improve prg = let Just (sc, _) = score prg
+                              prgs = filter (\(s, _) -> s < sc) $ tries prg
+                          in if null prgs then prg else snd $ head prgs
             go prg = let prg' = improve prg in if prg' == prg then prg else go prg'
           T.putStrLn . printProgram $ go prog
       Right _ -> error "Invalid pixel format"
