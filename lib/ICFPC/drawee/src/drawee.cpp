@@ -457,6 +457,33 @@ void main_loop() {
                             command_is_ready = false;
                         }
                     }
+                    if (event.key.keysym.sym == SDLK_RETURN) {
+                        for (int i = 0; i < n_commands; ++i) {
+                            Command *c = &commands[i];
+                            switch (c->type) {
+                                case cNONE: {
+                                    SDL_Log("");
+                                } break;
+                                case cCUT_LINE: {
+                                    Block *b = &blocks[c->block_id];
+                                    char const* axis = "her_vam";
+                                    int v = -1;
+                                    if (c->axis == VERTICAL) {
+                                        axis = "X";
+                                        v = c->x;
+                                    }
+                                    if (c->axis == HORIZONTAL) {
+                                        axis = "Y";
+                                        v = c->y;
+                                    }
+                                    SDL_Log("cut [%s] [%s] [%d]", id_to_string[c->block_id].c_str(), axis, v);
+                                } break;
+                                default: {
+                                    SDL_Log("swap underwear");
+                                } break;
+                            }
+                        }
+                    }
                 }
             }
         }
