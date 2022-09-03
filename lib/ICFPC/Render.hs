@@ -20,9 +20,9 @@ instance MonadCommand (RenderM s) where
   onYCut _ _ = pure ()
   onPCut _ = pure ()
   onColor (XY (MinMax xmin xmax) (MinMax ymin ymax)) (r, g, b, a) = do
-    forM_ [ymin .. ymax - 1] $ \y ->
-      forM_ [xmin .. xmax - 1] $ \x ->
-        RenderM $ \image -> writePixel image x y rgba
+    let rep = packPixel rgba
+    forM_ [ymin .. ymax - 1] $ \y -> RenderM $ \image -> do
+      unsafeWritePixelBetweenAt image rgba (mutablePixelBaseIndex image xmin y) (xmax - xmin)
     where
       rgba = PixelRGBA8 (fromIntegral r) (fromIntegral g) (fromIntegral b) (fromIntegral a)
   onSwap (XY (MinMax xmin1 xmax1) (MinMax ymin1 ymax1)) (XY (MinMax xmin2 _) (MinMax ymin2 _)) = do

@@ -55,6 +55,7 @@ main = do
     _ -> error "Usage: pixel <N> <input.png>"
 
 median :: [PixelRGBA8] -> PixelRGBA8
+median [x] = x
 median xs = go (PixelRGBA8 0 0 0 0)
   where
     sumDist x = sum $ dist x <$> xs
