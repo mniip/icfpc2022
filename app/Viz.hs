@@ -54,8 +54,8 @@ mkMouseData sz sdata ms = MouseData
 
 data GraphData = GraphData
   { _graph :: !Graph
-  , _allBlockMap :: !(M.Map EdgeId Block)
-  , _blockMap :: !(M.Map EdgeId Block)
+  , _allBlockMap :: !(M.Map EdgeId (XY (MinMax Int)))
+  , _blockMap :: !(M.Map EdgeId (XY (MinMax Int)))
   , _resultImage :: !(Image PixelRGBA8)
   , _resultBitmap :: !Picture
   }
@@ -152,11 +152,7 @@ main = getArgs >>= \case
 
   _ -> error "Usage: viz ( <width> <height> [input.isl | input.graph] | [output.png] [input.isl | input.graph])"
   where
-    parseInput txt = case I.parseProgram txt of
-      Right prog -> fromISL prog
-      Left err -> case parseGraph txt of
-        Right gr -> gr
-        Left err' -> error $ err <> "\n" <> err'
+    parseInput txt = fromISL $ I.parseProgram txt
     start mImage mInput sz gr = do
       screen <- getScreenSize
       let

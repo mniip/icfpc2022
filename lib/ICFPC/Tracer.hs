@@ -1,16 +1,25 @@
 module ICFPC.Tracer where
 
+import Codec.Picture.Types
 import Data.Functor.Identity
+import Data.Word
 
 import ICFPC.Pairs
 
-type Block = XY (MinMax Int)
+type RGBA = Word32
+
+packRGBA :: (Word8, Word8, Word8, Word8) -> RGBA
+packRGBA (r, g, b, a) = packPixel $ PixelRGBA8 r g b a
+
+unpackRGBA :: RGBA -> (Word8, Word8, Word8, Word8)
+unpackRGBA rgba = case unpackPixel rgba of
+  PixelRGBA8 r g b a -> (r, g, b, a)
 
 class Monad m => MonadCommand m where
   onXCut :: X (MinMedMax Int) -> Y (MinMax Int) -> m ()
   onYCut :: X (MinMax Int) -> Y (MinMedMax Int) -> m ()
   onPCut :: XY (MinMedMax Int) -> m ()
-  onColor :: XY (MinMax Int) -> (Int, Int, Int, Int) -> m ()
+  onColor :: XY (MinMax Int) -> RGBA -> m ()
   onSwap :: XY (MinMax Int) -> XY (MinMax Int) -> m ()
   onXMerge :: X (MinMedMax Int) -> Y (MinMax Int) -> m ()
   onYMerge :: X (MinMax Int) -> Y (MinMedMax Int) -> m ()

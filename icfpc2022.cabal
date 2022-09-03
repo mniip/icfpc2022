@@ -91,7 +91,8 @@ library
         MultiWayIf,
         UndecidableInstances,
         RecordWildCards,
-        ViewPatterns
+        ViewPatterns,
+        TemplateHaskell
     exposed-modules:
         ICFPC.Lib,
         ICFPC.ISL,
