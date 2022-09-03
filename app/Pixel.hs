@@ -1,5 +1,9 @@
 import Codec.Picture
 import Control.Lens
+import Data.Monoid
+import Data.Maybe (mapMaybe)
+import Data.List (minimumBy)
+import Data.Function (on)
 import Control.Monad.State
 import Data.Text.IO qualified as T
 import System.Environment
@@ -8,51 +12,71 @@ import Text.Read
 import ICFPC.Graph
 import ICFPC.ISL qualified as I
 import ICFPC.Render
+import ICFPC.Cost
+import ICFPC.Pairs
 
 main :: IO ()
 main = do
   getArgs >>= \case
-    [sStep, input] | Just step <- readMaybe sStep, step >= 1 -> readImage input >>= \case
+    [sStep, input] | Just step <- readMaybe sStep, step >= 0 -> readImage input >>= \case
       Left err -> error err
-      Right (ImageRGBA8 image') -> do
-        let
-          image = vflippedImage image'
-          width = imageWidth image
-          height = imageHeight image
-
-          fresh = _2 <+= 1
-          node n = modify $ _1 %~ addNode n
-          graph = fst $ execState (goRow 0 0 [] 0) (emptyGraph, 0)
-
-          goRow x y rs m
-            | x + step >= width = do
-              m' <- fresh
-              let PixelRGBA8 r g b a = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)], x' <- [x .. min (width - 1) (x + step - 1)]]
-              node $ Color m r g b a m'
-              joinRow y rs m'
-            | otherwise = do
-              m' <- fresh
-              let PixelRGBA8 r g b a = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)], x' <- [x .. min (width - 1) (x + step - 1)]]
-              node $ Color m r g b a m'
-              r' <- fresh
-              m'' <- fresh
-              node $ XCut m' (x + step) r' m''
-              goRow (x + step) y (r':rs) m''
-          joinRow y (r:rs) m
-            | y + step >= height = pure ()
-            | otherwise = do
-              m' <- fresh
-              node $ Merge r m m'
-              joinRow y rs m'
-          joinRow y [] m = do
-            r <- fresh
-            m' <- fresh
-            node $ YCut m (y + step) r m'
-            goRow 0 (y + step) [] m'
-
-        T.putStrLn $ I.printProgram $ toISL graph
+      Right (ImageRGBA8 image') -> if step == 0 then T.putStrLn . I.printProgram . toISL $ stepSearch image'
+                                                else let Just (g, _) = drawWithStep step image'
+                                                     in T.putStrLn . I.printProgram $ toISL g
       Right _ -> error "Invalid pixel format"
     _ -> error "Usage: pixel <N> <input.png>"
+
+-- May fail
+stepSearch :: Image PixelRGBA8 -> Graph
+stepSearch image = fst $ minimumBy (compare `on` snd) $ mapMaybe (\s -> drawWithStep s image) [10, 20..((min width height) - 10)]
+    where width = imageWidth image
+          height = imageHeight image
+
+-- "Pixelate" the image with a given step, return the command graph and new score.
+drawWithStep :: Int -> Image PixelRGBA8 -> Maybe (Graph, Int)
+drawWithStep step image' = do
+  let
+    image = vflippedImage image'
+    width = imageWidth image
+    height = imageHeight image
+
+    tryCost g = case runRender (XY width height) $ runCostT (runTrace g (XY width height)) of
+                  (((Nothing, _), Sum cost), image'') -> Just $ (g, cost + compareImages image' image'')
+                  (((Just e, _), _), _) -> Nothing
+
+    fresh = _2 <+= 1
+    node n = modify $ _1 %~ addNode n
+    graph = fst $ execState (goRow 0 0 [] 0) (emptyGraph, 0)
+
+    goRow x y rs m
+      | x + step >= width = do
+        m' <- fresh
+        let PixelRGBA8 r g b a = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)],
+                                                                 x' <- [x .. min (width - 1) (x + step - 1)]]
+        node $ Color m r g b a m'
+        joinRow y rs m'
+      | otherwise = do
+        m' <- fresh
+        let PixelRGBA8 r g b a = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)],
+                                                                 x' <- [x .. min (width - 1) (x + step - 1)]]
+        node $ Color m r g b a m'
+        r' <- fresh
+        m'' <- fresh
+        node $ XCut m' (x + step) r' m''
+        goRow (x + step) y (r':rs) m''
+    joinRow y (r:rs) m
+      | y + step >= height = pure ()
+      | otherwise = do
+        m' <- fresh
+        node $ Merge r m m'
+        joinRow y rs m'
+    joinRow y [] m = do
+      r <- fresh
+      m' <- fresh
+      node $ YCut m (y + step) r m'
+      goRow 0 (y + step) [] m'
+
+  tryCost graph
 
 median :: [PixelRGBA8] -> PixelRGBA8
 median [x] = x
