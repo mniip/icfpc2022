@@ -259,7 +259,7 @@ void id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_b
 
 int main(int n_args, char **args) {
     if (n_args != 2) {
-        printf("Usage %s <input.isl>\n", args[0]);
+        printf("Usage %s <input.isl>.\n Make some optimisations to input file and print the result to stdout.\n", args[0]);
         return 0;
      }
     std::string text = read_entire_file(args[1]);
@@ -282,12 +282,12 @@ int main(int n_args, char **args) {
             std::cout << command_to_string(&c) << "\n";
         }
         */
-        
+
 
         bool found_something = false;
         int merge_new_id = 1;
         for (int i = 0; i + 3 < commands.size(); ++i) {
-            std::cerr << "check from " << i << "\n";
+            //std::cerr << "check from " << i << "\n";
             Command *c0 = &commands[i];
             Command *c1 = &commands[i+1];
             Command *c2 = &commands[i+2];
@@ -314,8 +314,8 @@ int main(int n_args, char **args) {
                 }
 
                 for (int j = i + 1; j + 3 < commands.size(); ++j) {
-                    if (j <= i + 3) std::cerr << command_to_string(&commands[j]) << " was optimized " << command_to_string(&commands[j+3]) << "took it's place\n";
-                    commands[j] = commands[j+3];
+                    //if (j <= i + 3) std::cerr << command_to_string(&commands[j]) << " was optimized " << command_to_string(&commands[j+3]) << "took it's place\n";
+                    commands[j] = std::move(commands[j+3]);
                 }
                 commands.pop_back();
                 commands.pop_back();
@@ -331,6 +331,36 @@ int main(int n_args, char **args) {
                 found_something = true;
                 break;
             }
+        }
+        if (!found_something) break;
+    }
+
+    for (;;) {
+        /*
+        std::cout << "#################################################\n";
+        for (Command& c : commands) {
+            std::cout << command_to_string(&c) << "\n";
+        }
+        */
+        bool found_something = false;
+        for (int i = commands.size() - 1; i - 2 >= 0; --i) {
+            Command *c0 = &commands[i-2];
+            Command *c1 = &commands[i-1];
+            Command *c2 = &commands[i];
+            if (c0->type != cSET_COLOR) continue;
+            if (c1->type != cCUT_LINE)  continue; // todo cCUT_POINT
+            if (c2->type != cSET_COLOR) continue;
+            u8 R, G, B, A;
+            R = c0->R; G = c0->G; B = c0->B; A = c0->A;
+            if (c2->R != R || c2->G != G || c2->B != B || c2->A != A) continue;
+
+            std::string const& id = c0->block_id;
+            if (c2->block_id != id + ".0" && c2->block_id != id + ".1") continue;
+            for (int j = i; j + 1 < commands.size(); ++j) {
+                commands[j] = std::move(commands[j+1]);
+            }
+            commands.pop_back();
+            found_something = true;
         }
         if (!found_something) break;
     }
