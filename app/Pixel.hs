@@ -47,35 +47,37 @@ drawWithStep step image' = do
 
     fresh = _2 <+= 1
     node n = modify $ _1 %~ addNode n
-    graph = fst $ execState (goRow 0 0 [] 0) (emptyGraph, 0)
+    stepX0 = let s = width `mod` step in if s == 0 then step else s
+    stepY0 = let s = height `mod` step in if s == 0 then step else s
+    graph = fst $ execState (goRow stepX0 stepY0 0 0 [] 0) (emptyGraph, 0)
 
-    goRow x y rs m
-      | x + step >= width = do
+    goRow stepX stepY x y rs m
+      | x + stepX >= width = do
         m' <- fresh
-        let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)],
-                                                   x' <- [x .. min (width - 1) (x + step - 1)]]
+        let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + stepY - 1)],
+                                                   x' <- [x .. min (width - 1) (x + stepX - 1)]]
         node $ Color m (packPixel rgba) m'
-        joinRow y rs m'
+        joinRow stepY y rs m'
       | otherwise = do
         m' <- fresh
-        let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)],
-                                                   x' <- [x .. min (width - 1) (x + step - 1)]]
+        let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + stepY - 1)],
+                                                   x' <- [x .. min (width - 1) (x + stepX - 1)]]
         node $ Color m (packPixel rgba) m'
         r' <- fresh
         m'' <- fresh
-        node $ XCut m' (x + step) r' m''
-        goRow (x + step) y (r':rs) m''
-    joinRow y (r:rs) m
-      | y + step >= height = pure ()
+        node $ XCut m' (x + stepX) r' m''
+        goRow stepX stepY (x + stepX) y (r':rs) m''
+    joinRow stepY y (r:rs) m
+      | y + stepY >= height = pure ()
       | otherwise = do
         m' <- fresh
         node $ Merge r m m'
-        joinRow y rs m'
-    joinRow y [] m = do
+        joinRow stepY y rs m'
+    joinRow stepY y [] m = do
       r <- fresh
       m' <- fresh
-      node $ YCut m (y + step) r m'
-      goRow 0 (y + step) [] m'
+      node $ YCut m (y + stepY) r m'
+      goRow step step 0 (y + stepY) [] m'
 
   tryCost graph
 
