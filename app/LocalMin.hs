@@ -26,57 +26,76 @@ main = do
           image = vflippedImage image'
           width = imageWidth image
           height = imageHeight image
+          tryCost g = case runRender (XY width height) $ runCostT (runTrace g (XY width height)) of
+            (((Nothing, _), Sum cost), image'') -> Just $ (g, cost + compareImages image' image'')
+            (((Just e, _), _), _) -> Nothing
  
-          go graph = do
+          -- Optimize only color nodes
+          goColor cost graph = do
             let
-              Just (_, cost) = tryCost graph
-              graphs = mapMaybe tryCost $ concat $ shrinkNode graph <$> topoSort graph
-              tryCost g = case runRender (XY width height) $ runCostT (runTrace g (XY width height)) of
-                (((Nothing, _), Sum cost), image'') -> Just $ (g, cost + compareImages image' image'')
-                (((Just e, _), _), _) -> Nothing
+              graphs = mapMaybe tryCost $ concat $ shrinkColorNode graph <$> topoSort graph
 
             case graphs of
-              [] -> do
-                hPutStrLn stderr "No shrinks"
+              [] -> (graph, cost)
+              (minimumBy (comparing snd) -> (g, cost'))
+                | cost' < cost -> goColor cost' g
+                | otherwise -> (graph, cost)
+
+          go cost0 step graph0 = do
+            let
+              (graph, cost) = goColor cost0 graph0
+              graphs = mapMaybe tryCost $ concat $ shrinkNode step graph <$> topoSort graph
+
+            case graphs of
+              [] -> if step > 1 then go cost (step-1) graph else hPutStrLn stderr "No shrinks"
               (minimumBy (comparing snd) -> (g, cost'))
                 | cost' < cost -> do
-                  hPutStrLn stderr $ "Improvement: " <> show cost'
+                  hPutStrLn stderr $ "Improvement: " <> show cost' ++ ", step: " ++ show step
                   T.writeFile output $ I.printProgram $ toISL g
-                  go g
+                  go cost' (step + 1) g -- Accelerate
+                | step > 1 -> do
+                    let step' = (step + 1) `div` 2
+                    hPutStrLn stderr $ "Decelerate to " ++ show step'
+                    go cost step' graph -- Decelrate
                 | otherwise -> do
                   hPutStrLn stderr "No improvement"
 
         I.parseProgram <$> T.readFile output >>= \case
           Left err -> error err
-          Right prog -> go $ fromISL prog
+          Right prog -> let graph = fromISL prog
+                            Just (_, cost) = tryCost graph
+                        in go cost 40 graph
       Right _ -> error "Invalid pixel format"
     _ -> error "Usage: local <input.png> <inout.isl>"
 
-shrinkNode :: Graph -> Node -> [Graph]
-shrinkNode graph = \case
-  n@(XCut s x t1 t2) ->
-    [ updateNode n (XCut s (x - 1) t1 t2) graph
-    , updateNode n (XCut s (x + 1) t1 t2) graph
-    ]
-  n@(YCut s y t1 t2) ->
-    [ updateNode n (YCut s (y - 1) t1 t2) graph
-    , updateNode n (YCut s (y + 1) t1 t2) graph
-    ]
-  n@(PCut s x y t1 t2 t3 t4) ->
-    [ updateNode n (PCut s (x - 1) y t1 t2 t3 t4) graph
-    , updateNode n (PCut s (x + 1) y t1 t2 t3 t4) graph
-    , updateNode n (PCut s x (y - 1) t1 t2 t3 t4) graph
-    , updateNode n (PCut s x (y + 1) t1 t2 t3 t4) graph
-    ]
-  n@(Color s r g b a t) -> concat
-    [ [updateNode n (Color s (r - 1) g b a t) graph | r > 0]
-    , [updateNode n (Color s (r + 1) g b a t) graph | r < 255]
-    , [updateNode n (Color s r (g - 1) b a t) graph | g > 0]
-    , [updateNode n (Color s r (g + 1) b a t) graph | g < 255]
-    , [updateNode n (Color s r g (b - 1) a t) graph | b > 0]
-    , [updateNode n (Color s r g (b + 1) a t) graph | b < 255]
-    , [updateNode n (Color s r g b (a - 1) t) graph | a > 0]
-    , [updateNode n (Color s r g b (a + 1) t) graph | a < 255]
+shrinkColorNode :: Graph -> Node -> [Graph]
+shrinkColorNode graph = \case
+  n@(Color s r g b a t) -> let step' = 1 in concat
+    [ [updateNode n (Color s (r - step') g b a t) graph | r >= step']
+    , [updateNode n (Color s (r + step') g b a t) graph | r <= 255 - step']
+    , [updateNode n (Color s r (g - step') b a t) graph | g >= step']
+    , [updateNode n (Color s r (g + step') b a t) graph | g <= 255 - step']
+    , [updateNode n (Color s r g (b - step') a t) graph | b >= step']
+    , [updateNode n (Color s r g (b + step') a t) graph | b <= 255 - step']
+    , [updateNode n (Color s r g b (a - step') t) graph | a >= step']
+    , [updateNode n (Color s r g b (a + step') t) graph | a <= 255 - step']
     ]
   _ -> []
 
+shrinkNode :: Int -> Graph -> Node -> [Graph]
+shrinkNode step graph = \case
+  n@(XCut s x t1 t2) ->
+    [ updateNode n (XCut s (x - step) t1 t2) graph
+    , updateNode n (XCut s (x + step) t1 t2) graph
+    ]
+  n@(YCut s y t1 t2) ->
+    [ updateNode n (YCut s (y - step) t1 t2) graph
+    , updateNode n (YCut s (y + step) t1 t2) graph
+    ]
+  n@(PCut s x y t1 t2 t3 t4) ->
+    [ updateNode n (PCut s (x - step) y t1 t2 t3 t4) graph
+    , updateNode n (PCut s (x + step) y t1 t2 t3 t4) graph
+    , updateNode n (PCut s x (y - step) t1 t2 t3 t4) graph
+    , updateNode n (PCut s x (y + step) t1 t2 t3 t4) graph
+    ] 
+  _ -> []
