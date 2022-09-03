@@ -66,7 +66,7 @@ drawWithStep step image' = do
         r' <- fresh
         m'' <- fresh
         node $ XCut m' (x + stepX) r' m''
-        goRow stepX stepY (x + stepX) y (r':rs) m''
+        goRow step stepY (x + stepX) y (r':rs) m''
     joinRow stepY y (r:rs) m
       | y + stepY >= height = pure ()
       | otherwise = do
@@ -77,7 +77,7 @@ drawWithStep step image' = do
       r <- fresh
       m' <- fresh
       node $ YCut m (y + stepY) r m'
-      goRow step step 0 (y + stepY) [] m'
+      goRow stepX0 step 0 (y + stepY) [] m'
 
   tryCost graph
 
