@@ -56,24 +56,24 @@ main = do
 
 median :: [PixelRGBA8] -> PixelRGBA8
 median [x] = x
-median xs = go (PixelRGBA8 0 0 0 0)
+median xs = fromTuple $ go (sumDist average) average
   where
-    sumDist x = sum $ dist x <$> xs
-    dist (PixelRGBA8 r1 g1 b1 a1) (PixelRGBA8 r2 g2 b2 a2)
-      = sqrt $ (fromIntegral r1 - fromIntegral r2)^2 + (fromIntegral g1 - fromIntegral g2)^2 + (fromIntegral b1 - fromIntegral b2)^2 + (fromIntegral a1 - fromIntegral a2)^2 :: Float
-    go c0@(PixelRGBA8 r g b a)
-      | r < 255 && dr < d0 = go cr
-      | g < 255 && dg < d0 = go cg
-      | b < 255 && db < d0 = go cb
-      | a < 255 && da < d0 = go ca
-      | otherwise = c0
-      where
-        cr = PixelRGBA8 (r + 1) g b a
-        cg = PixelRGBA8 r (g + 1) b a
-        cb = PixelRGBA8 r g (b + 1) a
-        ca = PixelRGBA8 r g b (a + 1)
-        d0 = sumDist c0
-        dr = sumDist cr
-        dg = sumDist cg
-        db = sumDist cb
-        da = sumDist ca
+    toTuple :: PixelRGBA8 -> (Int, Int, Int, Int)
+    toTuple (PixelRGBA8 r g b a) = (fromIntegral r, fromIntegral g, fromIntegral b, fromIntegral a)
+    fromTuple (r, g, b, a) = PixelRGBA8 (fromIntegral r) (fromIntegral g) (fromIntegral b) (fromIntegral a)
+    xs' = map toTuple xs
+    sumDist x = sum $ dist x <$> xs'
+    dist (r1, g1, b1, a1) (r2, g2, b2, a2) = sqrt . fromIntegral $ (r1 - r2)^2 + (g1 - g2)^2 + (b1 - b2)^2 + (a1 - a2)^2 :: Float
+    (r1, g1, b1, a1) .+. (r2, g2, b2, a2) = (r1+r2, g1+g2, b1+b2, a1+a2)
+    len = length xs
+    average = let (r, g, b, a) = foldr1 (.+.) xs' in (r `div` len, g `div` len, b `div` len, a `div` len)
+    dirs = [(r, g, b, a) | r <- [0, -1, 1], g <- [0, -1, 1], b <- [0, -1, 1], a <- [0, -1, 1],
+                           r^2 + g^2 + b^2 + a^2 <= 1, r^2 + g^2 + b^2 + a^2 /= 0]
+    index ls a = fst . head . filter (\b -> snd b == a) $ zip [0..] ls
+    go oldDist pix =
+      let nbrs = map (pix .+.) dirs
+          dists = map sumDist nbrs
+          best = minimum dists
+          i = index dists best
+          bestPix = nbrs !! i
+      in if best < oldDist then go best bestPix else pix
