@@ -36,6 +36,24 @@ instance MonadCommand (RenderM s) where
   onXMerge _ _ = pure ()
   onYMerge _ _ = pure ()
 
+vflipImage :: MutableImage s PixelRGBA8 -> ST s ()
+vflipImage image = do
+  forM_ [0 .. (height - 1) `div` 2] $ \y ->
+    forM_ [0 .. width - 1] $ \x -> do
+      c1 <- readPixel image x y
+      c2 <- readPixel image x (height - 1 - y)
+      writePixel image x y c2
+      writePixel image x (height - 1 - y) c1
+  where
+    width = mutableImageWidth image
+    height = mutableImageHeight image
+
+vflippedImage :: Image PixelRGBA8 -> Image PixelRGBA8
+vflippedImage image = runST $ do
+  image' <- thawImage image
+  vflipImage image'
+  unsafeFreezeImage image'
+
 runRender :: XY Int -> (forall s. RenderM s a) -> (a, Image PixelRGBA8)
 runRender (XY width height) f = runST $ do
   image <- newMutableImage width height
@@ -43,10 +61,5 @@ runRender (XY width height) f = runST $ do
     forM_ [0 .. width - 1] $ \x ->
       writePixel image x y (PixelRGBA8 255 255 255 255)
   r <- runRenderM f image
-  forM_ [0 .. (height - 1) `div` 2] $ \y ->
-    forM_ [0 .. width - 1] $ \x -> do
-      c1 <- readPixel image x y
-      c2 <- readPixel image x (height - 1 - y)
-      writePixel image x y c2
-      writePixel image x (height - 1 - y) c1
+  vflipImage image
   (r,) <$> unsafeFreezeImage image

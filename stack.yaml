@@ -1,3 +1,5 @@
 packages:
   - .
+ghc-options:
+  $locals: -funbox-strict-fields -O2
 snapshot: nightly-2022-09-01

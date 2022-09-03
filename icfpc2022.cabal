@@ -36,6 +36,14 @@ executable viz
         ViewPatterns,
         TemplateHaskell
 
+executable pixel
+    main-is: Pixel.hs
+    build-depends: base, icfpc2022, text, JuicyPixels, lens, mtl
+    hs-source-dirs: app
+    default-language: GHC2021
+    extensions:
+        LambdaCase
+
 library
     build-depends:
         base,
