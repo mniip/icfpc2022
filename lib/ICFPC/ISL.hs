@@ -181,7 +181,7 @@ traceProgram :: MonadCommand m => XY Int -> Program -> m (Maybe (Int, InvalidCom
 traceProgram size (Program prog) = runStateT (go 0 $ NE.toList prog) initState
   where
     initState = BState
-      { _bsFresh = 1
+      { _bsFresh = 0
       , _bsBlockStates = M.singleton (BlockId $ 0 NE.:| []) (MinMax 0 <$> size)
       }
     go !_ [] = pure Nothing
