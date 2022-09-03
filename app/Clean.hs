@@ -24,6 +24,10 @@ removeColors [] = [[]]
 removeColors ls@(x@(Color _ _ _ _ _):xs) = xs : (map (x:) $ removeColors xs)
 removeColors (x:xs) = (map (x:) $ removeColors xs)
 
+-- Remove commands which don't affect the image at the end
+removeTail :: [Command] -> [Command]
+removeTail xs = reverse . dropWhile (\c -> case c of Merge _ _ -> True; PCut _ _ _ -> True; LCut _ _ _ -> True; _ -> False) $ reverse xs
+
 main :: IO ()
 main = do
   getArgs >>= \case
@@ -39,7 +43,7 @@ main = do
               case runRender (XY width height) $ runCostT (runTrace prg (XY width height)) of
                 (((Nothing, _), Sum cost), image') -> Just (cost + compareImages image image', prg)
                 (((Just err, BState line _ _), _), _) -> Nothing
-            tries prg = mapMaybe score (map toProg . removeColors $ commands prg)
+            tries prg = mapMaybe score (map (toProg . removeTail) . removeColors $ commands prg)
             improve prg = snd . minimumBy (compare `on` fst) $ tries prg
             go prg = let prg' = improve prg in if prg' == prg then prg else go prg'
           T.putStrLn . printProgram $ go prog
