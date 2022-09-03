@@ -233,7 +233,6 @@ void id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_b
     std::string start = "";
     int i = 0;
     for (; i < id.size(); ++i) {
-        if (i == id.size()) break;
         if (id[i] == '.') break;
         warning('0' <= id[i] && id[i] <= '9');
         start.push_back(id[i]);
@@ -258,12 +257,34 @@ void id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_b
     }
 }
 
+bool string_starts_with(std::string const& s, std::string const& start) {
+    for (int i = 0; i < start.size(); ++i) {
+        if (i == s.size()) return false;
+        if (s[i] != start[i]) return false;
+    }
+    return true;
+}
+
+void id_replace_start_if_starts_with(std::string &id, std::string const& to_replace, std::string const& replacement) {
+    int i = 0;
+    std::string start = "";
+    for (; i < to_replace.size(); ++i) {
+        if (i == id.size()) break;
+        if (id[i] != to_replace[i]) return;
+    }
+
+    std::string end = "";
+    for (int j = i; j < id.size(); ++j) end.push_back(id[j]);
+    id = replacement;
+    id += end;
+}
+
 int main(int n_args, char **args) {
     std::string text;
     if (n_args != 2) {
         //printf("Usage %s <input.isl>.\n Make some optimisations to input file and print the result to stdout.\n", args[0]);
         //return 0;
-        text = read_entire_file("09.isl");
+        text = read_entire_file("log2.log");
     } else {
         text = read_entire_file(args[1]);
     }
@@ -426,15 +447,13 @@ int main(int n_args, char **args) {
         */
 
 
+
         bool found_something = false;
         int merge_new_id = 1;
-        for (int i = 0; i + 4 < commands.size(); ++i) {
+        for (int i = 0; i + 3 < commands.size(); ++i) {
             //std::cerr << "check from " << i << "\n";
             Command *cut0   = &commands[i];
             Command *cut1   = &commands[i+1];
-            Command *color  = &commands[i+2];
-            Command *merge1 = &commands[i+3];
-            Command *merge0 = &commands[i+4];
             if (cut0->type == cMERGE) {
                 merge_new_id += 1;
                 continue;
@@ -442,56 +461,99 @@ int main(int n_args, char **args) {
 
             if (cut0->type != cCUT_LINE) continue;
             if (cut1->type != cCUT_LINE) continue;
-            if (color->type != cSET_COLOR) continue;
-            if (merge1->type != cMERGE) continue;
-            if (merge0->type != cMERGE) continue;
 
-            std::string const& id   = cut0->block_id;
-            char               axis = cut0->axis;
-            if (cut1->block_id != id + ".1") continue; // TODO: X0 > X1
-            if (color->block_id != id + ".1.1") continue;
+            char axis = cut0->axis;
             if (cut1->axis != axis) continue;
-            if (axis == 'X') if (cut1->x < cut0->x) continue;
-            if (axis == 'Y') if (cut1->y < cut0->y) continue;
-            if (merge0->block_id != id + ".0" && merge0->block_id2 != id + ".0") continue; // 0 так как чекаем только увеличение оффсета
 
-            if (merge1->block_id != cut1->block_id + ".0" && merge1->block_id2 != cut1->block_id + ".0") continue;
-            if (merge1->block_id != cut1->block_id + ".1" && merge1->block_id2 != cut1->block_id + ".1") continue;
-            if (merge0->block_id != std::to_string(merge_new_id) && merge0->block_id2 != std::to_string(merge_new_id)) continue;
+            if (cut1->block_id == cut0->block_id + ".1") {
+                std::string unused0 = cut0->block_id + ".0";
+                std::string unused1 = cut1->block_id + ".0";
 
-            cut0->y = cut1->y;
-            cut0->x = cut1->x;
+                bool unused_are_unused = false;
+                std::string id_closest = cut1->block_id + ".1";
+                int merge_internal_part_id = merge_new_id;
+                for (int j = i+2; j + 1 < commands.size(); ++j) {
+                    if (j > i + 2 && commands[j-1].type == cMERGE) merge_internal_part_id += 1;
 
-            *cut1 = std::move(*color);
-            cut1->block_id = id + ".1";
+                    {
+                        Command *c = &commands[j];
+                        if (c->type == cMERGE && c->block_id == unused1) {}
+                        else
+                        if (c->block_id == id_closest || c->block_id2 == id_closest) {
+                            if (c->type != cCUT_LINE && c->type != cMERGE && c->type != cSET_COLOR) break;
 
-            color->type      = cMERGE;
-            color->block_id  = id + ".0";
-            color->block_id2 = id + ".1";
+                            if (c->type == cCUT_LINE) {
+                                if (c->axis != axis) break; // пока что не разрешаем резать по другой оси, а то сложно следить за нужной границей
+                                id_closest = c->block_id + ".0";
+                                continue;
+                            }
 
-            for (int j = i + 3; j + 2 < commands.size(); ++j) {
-                //if (j <= i + 5) std::cerr << command_to_string(&commands[j]) << " was optimized " << command_to_string(&commands[j+2]) << "took it's place\n";
-                commands[j] = std::move(commands[j+2]);
-            }
-            commands.pop_back();
-            commands.pop_back();
+                            if (c->type == cMERGE) {
+                                id_closest = std::to_string(merge_internal_part_id);
+                                continue;
+                            }
+                        }
+                    }
 
-            for (int j = i + 3; j < commands.size(); ++j) {
-                Command *c = &commands[j];
-                id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id, merge_new_id, "");
-                if (c->block_id2 != "") {
-                    id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id2, merge_new_id, "");
+                    Command *merge1 = &commands[j];
+                    // TODO: если встетилось слияние двух нетронутых блоков, то ведь тоже можно кое-что почистить
+                    if (merge1->block_id == unused0 || merge1->block_id2 == unused0) break;
+                    if (merge1->block_id != unused1) continue; // TODO: не полагаться на то что нужный айдишник первый
+                    if (merge1->type != cMERGE) break;
+                    if (merge1->block_id2 != id_closest) break;
+
+                    Command *merge0 = &commands[j+1];
+                    if (merge0->type     != cMERGE) break;
+                    if (merge0->block_id != unused0) break; // TODO: не полагаться на то что нужный айдишник первый
+                    if (merge0->block_id2 != std::to_string(merge_internal_part_id)) break;
+
+                    cut0->y = cut1->y;
+                    cut0->x = cut1->x;
+
+                    for (int k = i + 1; k + 1 < j; ++k) {
+                        commands[k] = std::move(commands[k+1]);
+                    }
+                    commands[j-1] = *merge0;
+                    merge0 = &commands[j-1];
+                    for (int k = j; k + 2 < commands.size(); ++k) {
+                        commands[k] = std::move(commands[k+2]);
+                    }
+                    commands.pop_back();
+                    commands.pop_back();
+
+
+                    for (int k = i+1; k < j-1; ++k) {
+                        Command *c = &commands[k];
+                        id_replace_start_if_starts_with(c->block_id, cut1->block_id + ".1", cut0->block_id + ".1");
+                        if (c->block_id2 != "") {
+                            id_replace_start_if_starts_with(c->block_id2, cut1->block_id + ".1", cut0->block_id + ".1");
+                        }
+                    }
+
+                    warning(merge0->block_id2 == std::to_string(merge_internal_part_id));
+                    merge0->block_id2 = id_closest;
+
+                    for (int k = j; k < commands.size(); ++k) {
+                        Command *c = &commands[k];
+                        id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id, merge_internal_part_id, "");
+                        if (c->block_id2 != "") {
+                            id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id2, merge_internal_part_id, "");
+                        }
+                    }
+
+                    ++n_optimized;
+                    unused_are_unused = true;
+                    found_something = true;
+                    break;
                 }
+                if (!unused_are_unused) continue;
             }
-
-            found_something = true;
-            ++n_optimized;
             break;
         }
         if (!found_something) break;
     }
 
-    //std::cout << "+++\n";
+    // std::cout << "+++\n";
     std::cerr << "optimized " << n_optimized << " things\n";
     for (Command& c : commands) {
         std::cout << command_to_string(&c) << "\n";
