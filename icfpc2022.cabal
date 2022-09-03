@@ -64,6 +64,7 @@ library
         lens,
         JuicyPixels,
         vector,
+        array,
         gloss
     hs-source-dirs: lib
     default-language: GHC2021

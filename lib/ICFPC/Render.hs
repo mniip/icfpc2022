@@ -3,16 +3,20 @@ module ICFPC.Render where
 import Codec.Picture.Types
 import Control.Monad.ST
 import Control.Monad.Reader
+import Data.Array.MArray as A
+import Data.Array.ST as A
+import Data.Array.Base as A
+import Data.Word
 
 import ICFPC.Tracer
 import ICFPC.Pairs
 
-newtype RenderM s a = RenderM { runRenderM :: MutableImage s PixelRGBA8 -> ST s a }
+newtype RenderM s a = RenderM { runRenderM :: (Int, Int, A.STUArray s Int Word32) -> ST s a }
   deriving (Functor, Applicative, Monad)
-    via (ReaderT (MutableImage s PixelRGBA8) (ST s))
+    via (ReaderT (Int, Int, A.STUArray s Int Word32) (ST s))
 
 instance MonadReader (XY Int) (RenderM s) where
-  ask = RenderM $ \image -> pure (XY (mutableImageWidth image) (mutableImageHeight image))
+  ask = RenderM $ \(width, height, _) -> pure (XY width height)
   local = error "local"
 
 instance MonadCommand (RenderM s) where
@@ -20,19 +24,21 @@ instance MonadCommand (RenderM s) where
   onYCut _ _ = pure ()
   onPCut _ = pure ()
   onColor (XY (MinMax xmin xmax) (MinMax ymin ymax)) (r, g, b, a) = do
-    let rep = packPixel rgba
-    forM_ [ymin .. ymax - 1] $ \y -> RenderM $ \image -> do
-      unsafeWritePixelBetweenAt image rgba (mutablePixelBaseIndex image xmin y) (xmax - xmin)
-    where
-      rgba = PixelRGBA8 (fromIntegral r) (fromIntegral g) (fromIntegral b) (fromIntegral a)
+    let rep = packPixel $ PixelRGBA8 (fromIntegral r) (fromIntegral g) (fromIntegral b) (fromIntegral a)
+    forM_ [ymin .. ymax - 1] $ \y -> RenderM $ \(width, _, arr) -> do
+      let off = y * width
+      forM_ [xmin .. xmax - 1] $ \x -> do
+        A.unsafeWrite arr (off + x) rep
   onSwap (XY (MinMax xmin1 xmax1) (MinMax ymin1 ymax1)) (XY (MinMax xmin2 _) (MinMax ymin2 _)) = do
-    forM_ [0 .. ymax1 - ymin1 - 1] $ \dy ->
-      forM [0 .. xmax1 - xmin1 - 1] $ \dx ->
-        RenderM $ \image -> do
-          c1 <- readPixel image (xmin1 + dx) (ymin1 + dy)
-          c2 <- readPixel image (xmin2 + dx) (ymin2 + dy)
-          writePixel image (xmin2 + dx) (ymin2 + dy) c1
-          writePixel image (xmin1 + dx) (ymin1 + dy) c2
+    forM_ [0 .. ymax1 - ymin1 - 1] $ \dy -> RenderM $ \(width, _, arr) -> do
+      let
+        off1 = (ymin1 + dy) * width + xmin1
+        off2 = (ymin2 + dy) * width + xmin2
+      forM_ [0 .. xmax1 - xmin1 - 1] $ \dx -> do
+        r1 <- A.unsafeRead arr (off1 + dx)
+        r2 <- A.unsafeRead arr (off2 + dx)
+        A.unsafeWrite arr (off2 + dx) r1
+        A.unsafeWrite arr (off1 + dx) r2
   onXMerge _ _ = pure ()
   onYMerge _ _ = pure ()
 
@@ -56,10 +62,14 @@ vflippedImage image = runST $ do
 
 runRender :: XY Int -> (forall s. RenderM s a) -> (a, Image PixelRGBA8)
 runRender (XY width height) f = runST $ do
+  arr <- A.newArray (0, width * height - 1) $ packPixel $ PixelRGBA8 255 255 255 255
+  r <- runRenderM f (width, height, arr)
   image <- newMutableImage width height
-  forM_ [0 .. height - 1] $ \y ->
+  forM_ [0 .. height - 1] $ \y -> do
+    let
+      off1 = (height - y - 1) * width
+      off2 = mutablePixelBaseIndex image 0 y
     forM_ [0 .. width - 1] $ \x ->
-      writePixel image x y (PixelRGBA8 255 255 255 255)
-  r <- runRenderM f image
-  vflipImage image
-  (r,) <$> unsafeFreezeImage image
+      A.unsafeRead arr (off1 + x) >>= writePackedPixelAt image (off2 + x * componentCount (undefined :: PixelRGBA8)) . unpackPixel
+  img <- unsafeFreezeImage image
+  pure (r, img)
