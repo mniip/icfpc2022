@@ -80,7 +80,7 @@ drawWithStep step image' = do
 
 median :: [PixelRGBA8] -> PixelRGBA8
 median [x] = x
-median xs = fromTuple $ go (sumDist average) average
+median xs = fromTuple $ go 100 (sumDist average) average
   where
     toTuple :: PixelRGBA8 -> (Int, Int, Int, Int)
     toTuple (PixelRGBA8 r g b a) = (fromIntegral r, fromIntegral g, fromIntegral b, fromIntegral a)
@@ -93,11 +93,11 @@ median xs = fromTuple $ go (sumDist average) average
     average = let (r, g, b, a) = foldr1 (.+.) xs' in (r `div` len, g `div` len, b `div` len, a `div` len)
     dirs = [(r, g, b, a) | r <- [0, -1, 1], g <- [0, -1, 1], b <- [0, -1, 1], a <- [0, -1, 1],
                            r^2 + g^2 + b^2 + a^2 <= 1, r^2 + g^2 + b^2 + a^2 /= 0]
-    index ls a = fst . head . filter (\b -> snd b == a) $ zip [0..] ls
-    go oldDist pix =
-      let nbrs = map (pix .+.) dirs
-          dists = map sumDist nbrs
-          best = minimum dists
-          i = index dists best
-          bestPix = nbrs !! i
-      in if best < oldDist then go best bestPix else pix
+    inside (r, g, b, a) = 0 <= r && r <= 255 && 0 <= g && g <= 255 && 0 <= b && b <= 255 && 0 <= a && a <= 255
+    go step oldDist pix =
+      let nbrs = filter inside $ map (\(r, g, b, a) -> pix .+. (step*r, step*g, step*b, step*a)) dirs
+          dists = map (\n -> (sumDist n, n)) nbrs
+          (best, bestPix) = minimumBy (compare `on` fst) dists
+      in if best < oldDist
+         then go step best bestPix
+         else if step > 1 then go ((step+1) `div` 2) oldDist pix else pix
