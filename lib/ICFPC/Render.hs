@@ -1,5 +1,6 @@
 module ICFPC.Render where
 
+import Codec.Picture
 import Codec.Picture.Types
 import Control.Monad.ST
 import Control.Monad.Reader
@@ -23,12 +24,11 @@ instance MonadCommand (RenderM s) where
   onXCut _ _ = pure ()
   onYCut _ _ = pure ()
   onPCut _ = pure ()
-  onColor (XY (MinMax xmin xmax) (MinMax ymin ymax)) (r, g, b, a) = do
-    let rep = packPixel $ PixelRGBA8 (fromIntegral r) (fromIntegral g) (fromIntegral b) (fromIntegral a)
+  onColor (XY (MinMax xmin xmax) (MinMax ymin ymax)) rgba = do
     forM_ [ymin .. ymax - 1] $ \y -> RenderM $ \(width, _, arr) -> do
       let off = y * width
       forM_ [xmin .. xmax - 1] $ \x -> do
-        A.unsafeWrite arr (off + x) rep
+        A.unsafeWrite arr (off + x) rgba
   onSwap (XY (MinMax xmin1 xmax1) (MinMax ymin1 ymax1)) (XY (MinMax xmin2 _) (MinMax ymin2 _)) = do
     forM_ [0 .. ymax1 - ymin1 - 1] $ \dy -> RenderM $ \(width, _, arr) -> do
       let
@@ -73,3 +73,9 @@ runRender (XY width height) f = runST $ do
       A.unsafeRead arr (off1 + x) >>= writePackedPixelAt image (off2 + x * componentCount (undefined :: PixelRGBA8)) . unpackPixel
   img <- unsafeFreezeImage image
   pure (r, img)
+
+readImageRGBA8 :: String -> IO (Image PixelRGBA8)
+readImageRGBA8 path = readImage path >>= \case
+  Right (ImageRGBA8 image) -> pure image
+  Right dyn -> pure $ convertRGBA8 dyn
+  Left err -> error err

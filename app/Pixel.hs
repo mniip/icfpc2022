@@ -1,4 +1,5 @@
 import Codec.Picture
+import Codec.Picture.Types
 import Control.Lens
 import Data.Monoid
 import Data.Maybe (mapMaybe)
@@ -51,15 +52,15 @@ drawWithStep step image' = do
     goRow x y rs m
       | x + step >= width = do
         m' <- fresh
-        let PixelRGBA8 r g b a = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)],
-                                                                 x' <- [x .. min (width - 1) (x + step - 1)]]
-        node $ Color m r g b a m'
+        let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)],
+                                                   x' <- [x .. min (width - 1) (x + step - 1)]]
+        node $ Color m (packPixel rgba) m'
         joinRow y rs m'
       | otherwise = do
         m' <- fresh
-        let PixelRGBA8 r g b a = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)],
-                                                                 x' <- [x .. min (width - 1) (x + step - 1)]]
-        node $ Color m r g b a m'
+        let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + step - 1)],
+                                                   x' <- [x .. min (width - 1) (x + step - 1)]]
+        node $ Color m (packPixel rgba) m'
         r' <- fresh
         m'' <- fresh
         node $ XCut m' (x + step) r' m''

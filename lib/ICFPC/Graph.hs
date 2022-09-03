@@ -1,7 +1,7 @@
 module ICFPC.Graph where
 
 import Control.Lens
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Control.Monad.Writer
 import Control.Monad.Except
 import Data.List
@@ -10,7 +10,6 @@ import Data.Map.Strict qualified as M
 import Data.Maybe
 import Data.Set qualified as S
 import Data.Text qualified as T
-import Data.Word
 import Text.Read (readEither)
 
 import ICFPC.ISL qualified as I
@@ -24,7 +23,7 @@ data Node
   = XCut !EdgeId !(X Int) {- -} !EdgeId !EdgeId
   | YCut !EdgeId !(Y Int) {- -} !EdgeId !EdgeId
   | PCut !EdgeId !(X Int) !(Y Int) {- -} !EdgeId !EdgeId !EdgeId !EdgeId
-  | Color !EdgeId !Word8 !Word8 !Word8 !Word8 {- -} !EdgeId
+  | Color !EdgeId !RGBA {- -} !EdgeId
   | Swap !EdgeId !EdgeId {- -} !EdgeId !EdgeId
   | Merge !EdgeId !EdgeId {- -} !EdgeId
   deriving (Eq, Ord, Show, Read)
@@ -49,7 +48,7 @@ nodeId = \case
   XCut i _ _ _ -> i
   YCut i _ _ _ -> i
   PCut i _ _ _ _ _ _ -> i
-  Color i _ _ _ _ _ -> i
+  Color i  _ _ -> i
   Swap i _ _ _ -> i
   Merge i _ _ -> i
 
@@ -58,7 +57,7 @@ nodeSources = \case
   XCut i1 _ _ _ -> S.singleton i1
   YCut i1 _ _ _ -> S.singleton i1
   PCut i1 _ _ _ _ _ _ -> S.singleton i1
-  Color i1 _ _ _ _ _ -> S.singleton i1
+  Color i1 _ _ -> S.singleton i1
   Swap i1 i2 _ _ -> S.fromList [i1, i2]
   Merge i1 i2 _ -> S.fromList [i1, i2]
 
@@ -67,7 +66,7 @@ nodeTargets = \case
   XCut _ _ i1 i2 -> S.fromList [i1, i2]
   YCut _ _ i1 i2 -> S.fromList [i1, i2]
   PCut _ _ _ i1 i2 i3 i4 -> S.fromList [i1, i2, i3, i4]
-  Color _ _ _ _ _ i1 -> S.singleton i1
+  Color _ _ i1 -> S.singleton i1
   Swap _ _ i1 i2 -> S.fromList [i1, i2]
   Merge _ _ i1 -> S.singleton i1
 
@@ -162,12 +161,12 @@ fromISL (I.Program prog) = usGraph $ foldl' goLine initState prog
         , usRename = usRename & M.insert (0 NE.<| blk) f & M.insert (1 NE.<| blk) (f + 1) & M.insert (2 NE.<| blk) (f + 2) & M.insert (3 NE.<| blk) (f + 3)
         , usGraph = usGraph & addNode (PCut p x y f (f + 1) (f + 2) (f + 3))
         }
-      I.Color (toReverse -> blk) r g b a
+      I.Color (toReverse -> blk) rgba
         | p <- usRename M.! blk
         , f <- usFreshGraph -> us
         { usFreshGraph = f + 1
         , usRename = usRename & M.insert blk f
-        , usGraph = usGraph & addNode (Color p (fromIntegral r) (fromIntegral g) (fromIntegral b) (fromIntegral a) f)
+        , usGraph = usGraph & addNode (Color p rgba f)
         }
       I.Swap (toReverse -> blk1) (toReverse -> blk2)
         | p1 <- usRename M.! blk1
@@ -253,10 +252,10 @@ toISL graph = I.Program . fmap I.Command . NE.fromList
         rename t3 (2 NE.<| blk)
         rename t4 (3 NE.<| blk)
         pure $ I.PCut (fromReverse blk) x y
-      Color s r g b a t -> do
+      Color s rgba t -> do
         blk <- useName s
         rename t blk
-        pure $ I.Color (fromReverse blk) (fromIntegral r) (fromIntegral g) (fromIntegral b) (fromIntegral a)
+        pure $ I.Color (fromReverse blk) rgba
       Swap s1 s2 t1 t2 -> do
         blk1 <- useName s1
         blk2 <- useName s2
@@ -270,13 +269,13 @@ toISL graph = I.Program . fmap I.Command . NE.fromList
         rename t (NE.singleton blk)
         pure $ I.Merge (fromReverse blk1) (fromReverse blk2)
 
-type NState = M.Map EdgeId Block
+type NState = M.Map EdgeId (XY (MinMax Int))
 
 data InvalidNode
   = NodeNotFound !EdgeId
   | TooThinToCut !EdgeId !Orientation !(MinMax Int)
   | CutLineNotInsideBlock !EdgeId !Orientation !Int !(MinMax Int)
-  | NotMergeable !EdgeId !Block !EdgeId !Block
+  | NotMergeable !EdgeId !(XY (MinMax Int)) !EdgeId !(XY (MinMax Int))
   deriving (Eq, Ord, Show)
 
 traceNode :: MonadCommand m => Node -> ExceptT InvalidNode (StateT NState m) ()
@@ -287,6 +286,7 @@ traceNode = \case
     modify
       $ M.insert t1 (XY (lower xs') ys)
       . M.insert t2 (XY (upper xs') ys)
+      . M.delete s
     lift . lift $ onXCut xs' ys
   YCut s y t1 t2 -> do
     XY xs ys <- block s
@@ -294,6 +294,7 @@ traceNode = \case
     modify
       $ M.insert t1 (XY xs (lower ys'))
       . M.insert t2 (XY xs (upper ys'))
+      . M.delete s
     lift . lift $ onYCut xs ys'
   PCut s x y t1 t2 t3 t4 -> do
     XY xs ys <- block s
@@ -304,27 +305,38 @@ traceNode = \case
       . M.insert t2 (XY (upper xs') (lower ys'))
       . M.insert t3 (XY (upper xs') (upper ys'))
       . M.insert t4 (XY (lower xs') (upper ys'))
+      . M.delete s
     lift . lift $ onPCut (XY xs' ys')
-  Color s r g b a t -> do
-    b' <- block s
-    modify $ M.insert t b'
-    lift . lift $ onColor b' (fromIntegral r, fromIntegral g, fromIntegral b, fromIntegral a)
+  Color s rgba t -> do
+    b <- block s
+    modify
+      $ M.insert t b
+      . M.delete s
+    lift . lift $ onColor b rgba
   Swap s1 s2 t1 t2 -> do
     b1 <- block s1
     b2 <- block s2
     modify
       $ M.insert t1 b2
       . M.insert t2 b1
+      . M.delete s1
+      . M.delete s2
     lift . lift $ onSwap b1 b2
   Merge s1 s2 t -> do
     b1@(XY xs1 ys1) <- block s1
     b2@(XY xs2 ys2) <- block s2
     if
       | Just xs' <- merge ys1 ys2 xs1 xs2 -> do
-        modify $ M.insert t (XY (outer xs') ys1)
+        modify
+          $ M.insert t (XY (outer xs') ys1)
+          . M.delete s1
+          . M.delete s2
         lift . lift $ onXMerge xs' ys1
       | Just ys' <- merge xs1 xs2 ys1 ys2 -> do
-        modify $ M.insert t (XY xs1 (outer ys'))
+        modify
+          $ M.insert t (XY xs1 (outer ys'))
+          . M.delete s1
+          . M.delete s2
         lift . lift $ onYMerge xs1 ys'
       | otherwise -> throwError $ NotMergeable s1 b1 s2 b2
   where

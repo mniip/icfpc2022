@@ -1,4 +1,3 @@
-import Data.Functor.Identity
 import Data.List.NonEmpty qualified as NE
 import Data.Text.IO qualified as T
 import System.Environment
@@ -8,13 +7,12 @@ import ICFPC.ISL
 import ICFPC.Pairs
 
 main :: IO ()
-main = map readMaybe <$> getArgs >>= \case
-  [Just x, Just y] -> do
-    t <- T.getContents
-    case parseProgram t of
-      Left err -> error err
-      Right prog -> case runIdentity $ runTrace prog (XY x y) of
-        (Nothing, _) -> pure ()
-        (Just err, BState line _ _) -> error $ show err <> "\nOn line " <> show (line + 1)
-          <> "\n" <> case prog of Program ls -> show $ ls NE.!! line
+main = getArgs >>= \case
+  [sX, sY]
+    | Just x <- readMaybe sX
+    , Just y <- readMaybe sY -> do
+      prog@(Program ls) <- parseProgram <$> T.getContents
+      case programErrors (XY x y) prog of
+        Just (line, err) -> error $ show err <> "\nOn line " <> show (line + 1) <> "\n" <> show (ls NE.!! line)
+        Nothing -> pure ()
   _ -> error "Usage: ./validate <width> <height>"
