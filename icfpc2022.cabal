@@ -42,7 +42,8 @@ executable pixel
     hs-source-dirs: app
     default-language: GHC2021
     extensions:
-        LambdaCase
+        LambdaCase,
+        DataKinds
 
 executable localmin
     main-is: LocalMin.hs

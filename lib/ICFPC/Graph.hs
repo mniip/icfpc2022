@@ -46,7 +46,7 @@ data NodeData where
   NodeData :: !(Node n m) -> !(Wide n (End 'True)) -> !(Wide m (End 'False)) -> NodeData
 
 {-# INLINE instantiateNodeData #-}
-instantiateNodeData :: Node n m -> ((Foldable (Wide n), Functor (Wide n), Foldable (Wide m), Functor (Wide m)) => r) -> r
+instantiateNodeData :: Node n m -> ((Foldable (Wide n), Applicative (Wide n), Foldable (Wide m), Applicative (Wide m)) => r) -> r
 instantiateNodeData node k = case node of
   Start -> k
   XCut _ -> k
@@ -84,16 +84,17 @@ emptyGraph = Graph
   , _gDown = M.empty
   }
 
-insertNode :: Node n m -> Graph -> (Graph, NodeId, Wide n (End 'True), Wide m (End 'False))
+insertNode :: Node n m -> Graph -> (NodeId, Wide n (End 'True), Wide m (End 'False), Graph)
 insertNode node graph = case mkData node of
   (df, ends, ups, downs) ->
-    ( graph'
+    ( i
+    , ups
+    , downs
+    , graph'
       & gNodes . at i .~ Just (NodeData node ups downs)
       & gFreshEndId .~ f + df
       & gEnds %~ M.union (M.fromList $ (,i) <$> ends)
-    , i
-    , ups
-    , downs )
+    )
   where
     i = graph ^. gFreshNodeId
     f = graph ^. gFreshEndId
@@ -134,19 +135,19 @@ endToNode graph (End e) = (graph ^. gEnds) M.! e
 data DeletedNodeData where
   DeletedNodeData :: !(Node n m) -> !(Wide n (Maybe (End 'False))) -> !(Wide m (Maybe (End 'True))) -> DeletedNodeData
 
-deleteEdgeUp :: End 'True -> Graph -> Maybe (Graph, End 'False)
+deleteEdgeUp :: End 'True -> Graph -> Maybe (End 'False, Graph)
 deleteEdgeUp u graph = case graph ^. gUp . at u of
   Nothing -> Nothing
-  Just d -> Just (graph & gUp . at u .~ Nothing & gDown . at d .~ Nothing, d)
+  Just d -> Just (d, graph & gUp . at u .~ Nothing & gDown . at d .~ Nothing)
 
-deleteEdgeDown :: End 'False -> Graph -> Maybe (Graph, End 'True)
+deleteEdgeDown :: End 'False -> Graph -> Maybe (End 'True, Graph)
 deleteEdgeDown d graph = case graph ^. gDown . at d of
   Nothing -> Nothing
-  Just u -> Just (graph & gDown . at d .~ Nothing & gUp . at u .~ Nothing, u)
+  Just u -> Just (u, graph & gDown . at d .~ Nothing & gUp . at u .~ Nothing)
 
-deleteNode :: NodeId -> Graph -> (Graph, DeletedNodeData)
+deleteNode :: NodeId -> Graph -> (DeletedNodeData, Graph)
 deleteNode i graph = case mkData $ (graph ^. gNodes) M.! i of
-  (downs, ups, dd) -> (foldl' pruneUp (foldl' pruneDown graph downs) ups, dd)
+  (downs, ups, dd) -> (dd, foldl' pruneUp (foldl' pruneDown graph downs) ups)
   where
     mkData (NodeData node ups downs) = instantiateNodeData node $
       ( toList downs
@@ -161,8 +162,24 @@ deleteNode i graph = case mkData $ (graph ^. gNodes) M.! i of
       Just u -> graph & gDown . at d .~ Nothing & gUp . at u .~ Nothing
     pruneEnd (End e) graph = graph & gEnds . at e .~ Nothing
 
-addEdge :: End 'True -> End 'False -> Graph -> Graph
-addEdge u d graph = graph & gUp . at u .~ Just d & gDown . at d .~ Just u
+insertEdge :: End 'False -> End 'True -> Graph -> Graph
+insertEdge d u graph = graph & gUp . at u .~ Just d & gDown . at d .~ Just u
+
+insertDownwards :: Wide n (Maybe (End 'False)) -> Node n m -> Graph -> (Wide m (End 'False), Graph)
+insertDownwards downs node graph = case insertNode node graph of
+  (_, ups, downs', graph') -> instantiateNodeData node $
+    (downs', foldl' connect graph' $ toList $ (,) <$> downs <*> ups)
+  where
+    connect g (Just d, u) = insertEdge d u g
+    connect g (Nothing, _) = g
+
+insertUpwards :: Wide m (Maybe (End 'True)) -> Node n m -> Graph -> (Wide n (End 'True), Graph)
+insertUpwards ups node graph = case insertNode node graph of
+  (_, ups', downs, graph') -> instantiateNodeData node $
+    (ups', foldl' connect graph' $ toList $ (,) <$> downs <*> ups)
+  where
+    connect g (d, Just u) = insertEdge d u g
+    connect g (_, Nothing) = g
 
 instance Show Graph where
   show graph = "{-\n" <> intercalate "\n" (showND <$> M.toAscList (graph ^. gNodes)) <> " -}"
@@ -194,8 +211,8 @@ makeLenses ''UnfoldState
 fromISL :: I.Program -> Graph
 fromISL (I.Program prog) = view usGraph $ execState (mapM_ goLine prog) initState
   where
-    initState = case insertNode Start emptyGraph of
-      (graph, _, _, Wide1 d) -> UnfoldState
+    initState = case insertDownwards Wide0 Start emptyGraph of
+      (Wide1 d, graph) -> UnfoldState
         { _usFreshISL = 0
         , _usRename = M.singleton (NE.singleton 0) d
         , _usGraph = graph
@@ -206,45 +223,36 @@ fromISL (I.Program prog) = view usGraph $ execState (mapM_ goLine prog) initStat
         pure r
       Nothing -> error $ "Unknown block: " <> show blk
     nextFreshISL = NE.singleton <$> (usFreshISL <+= 1)
-    addNode node graph = case insertNode node graph of
-      (graph', _, ups, downs) -> ((ups, downs), graph')
     goLine (I.Comment _) = pure ()
     goLine I.Blank = pure ()
     goLine (I.Command cmd) = go cmd
     go = \case
       I.LCut (toReverse -> blk) orient l -> do
         p <- useName blk
-        (Wide1 u, Wide2 d1 d2) <- usGraph %%= addNode ((case orient of X -> XCut; Y -> YCut) l)
-        usGraph %= addEdge u p
+        Wide2 d1 d2 <- usGraph %%= insertDownwards (Wide1 (Just p)) ((case orient of X -> XCut; Y -> YCut) l)
         usRename . at (0 NE.<| blk) .= Just d1
         usRename . at (1 NE.<| blk) .= Just d2
       I.PCut (toReverse -> blk) x y -> do
         p <- useName blk
-        (Wide1 u, Wide4 d1 d2 d3 d4) <- usGraph %%= addNode (PCut x y)
-        usGraph %= addEdge u p
+        Wide4 d1 d2 d3 d4 <- usGraph %%= insertDownwards (Wide1 (Just p)) (PCut x y)
         usRename . at (0 NE.<| blk) .= Just d1
         usRename . at (1 NE.<| blk) .= Just d2
         usRename . at (2 NE.<| blk) .= Just d3
         usRename . at (3 NE.<| blk) .= Just d4
       I.Color (toReverse -> blk) rgba -> do
         p <- useName blk
-        (Wide1 u, Wide1 d) <- usGraph %%= addNode (Color rgba)
-        usGraph %= addEdge u p
+        Wide1 d <- usGraph %%= insertDownwards (Wide1 (Just p)) (Color rgba)
         usRename . at blk .= Just d
       I.Swap (toReverse -> blk1) (toReverse -> blk2) -> do
         p1 <- useName blk1
         p2 <- useName blk2
-        (Wide2 u1 u2, Wide2 d1 d2) <- usGraph %%= addNode Swap
-        usGraph %= addEdge u1 p1
-        usGraph %= addEdge u1 p2
+        Wide2 d1 d2 <- usGraph %%= insertDownwards (Wide2 (Just p1) (Just p2)) Swap
         usRename . at blk1 .= Just d2
         usRename . at blk2 .= Just d1
       I.Merge (toReverse -> blk1) (toReverse -> blk2) -> do
         p1 <- useName blk1
         p2 <- useName blk2
-        (Wide2 u1 u2, Wide1 d) <- usGraph %%= addNode Merge
-        usGraph %= addEdge u1 p1
-        usGraph %= addEdge u2 p2
+        Wide1 d <- usGraph %%= insertDownwards (Wide2 (Just p1) (Just p2)) Merge
         w <- nextFreshISL
         usRename . at w .= Just d
 

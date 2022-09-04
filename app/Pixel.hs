@@ -17,8 +17,7 @@ import ICFPC.Cost
 import ICFPC.Pairs
 
 main :: IO ()
-main = undefined
-{- do
+main = do
   getArgs >>= \case
     [sStep, input] | Just step <- readMaybe sStep, step >= 0 -> readImage input >>= \case
       Left err -> error err
@@ -79,66 +78,58 @@ drawWithStep step image' = do
       Left _ -> Nothing
       Right score -> Just (g, score)
 
-    fresh = _2 <+= 1
-    node n = modify $ _1 %~ addNode n
+    node1 :: End 'False -> Node 1 m -> State Graph (Wide m (End 'False))
+    node1 d n = state $ insertDownwards (Wide1 (Just d)) n
+    node2 :: End 'False -> End 'False -> Node 2 m -> State Graph (Wide m (End 'False))
+    node2 d1 d2 n = state $ insertDownwards (Wide2 (Just d1) (Just d2)) n
+
     stepX0 = let s = width `mod` step in if s == 0 then step else s
     stepY0 = let s = height `mod` step in if s == 0 then step else s
-    graph = fst $ execState (start 0) (emptyGraph, 0)
+    graph = case insertDownwards Wide0 Start emptyGraph of
+      (Wide1 d, graph) -> execState (start d) graph
 
-    cutDownMargin m
-      | down == 0 = return m
+    cutDownMargin d
+      | down == 0 = pure d
       | otherwise = do
-          r <- fresh
-          m' <- fresh
-          node $ YCut m down r m'
-          return m'
-    cutLeftMargin m
-      | left == 0 = return m
+        Wide2 _ d' <- node1 d $ YCut down
+        pure d'
+    cutLeftMargin d
+      | left == 0 = pure d
       | otherwise = do
-          r <- fresh
-          m' <- fresh
-          node $ XCut m left r m'
-          return m'
+        Wide2 _ d' <- node1 d $ XCut left
+        pure d'
     -- Start drawing rectangles
-    start m = do
-        m1 <- fresh
-        node $ Color m (packPixel background) m1 -- Fill the background color in case it's not white
-        m2 <- cutDownMargin m1
-        m3 <- cutLeftMargin m2
-        goRow stepX0 step left down [] m3
+    start d = do
+        Wide1 d' <- node1 d $ Color (packPixel background)
+        d'' <- cutDownMargin d'
+        d''' <- cutLeftMargin d''
+        goRow stepX0 step left down [] d'''
     -- Draw a rectangle with width stepX
-    goRow stepX stepY x y rs m
+    goRow stepX stepY x y rs d
       | y > up = do
-        m' <- fresh
-        node $ Color m (packPixel background) m'
+        node1 d $ Color (packPixel background)
+        pure ()
       | x + stepX > right = do
-        m' <- fresh
         let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + stepY - 1)],
                                                    x' <- [x .. min (width - 1) (x + stepX - 1)]]
-        node $ Color m (packPixel rgba) m'
-        joinRow stepY y rs m'
+        Wide1 d' <- node1 d $ Color (packPixel rgba)
+        joinRow stepY y rs d'
       | otherwise = do
-        m' <- fresh
         let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + stepY - 1)],
                                                    x' <- [x .. min (width - 1) (x + stepX - 1)]]
-        node $ Color m (packPixel rgba) m'
-        r' <- fresh
-        m'' <- fresh
-        node $ XCut m' (x + stepX) r' m''
-        goRow step stepY (x + stepX) y (r':rs) m''
+        Wide1 d' <- node1 d $ Color (packPixel rgba)
+        Wide2 r d'' <- node1 d' $ XCut (x + stepX)
+        goRow step stepY (x + stepX) y (r:rs) d''
     -- Merge rectangles in the row
-    joinRow stepY y (r:rs) m
+    joinRow stepY y (r:rs) d
       | y + stepY >= height = pure ()
       | otherwise = do
-        m' <- fresh
-        node $ Merge r m m'
-        joinRow stepY y rs m'
+        Wide1 d' <- node2 r d Merge
+        joinRow stepY y rs d'
     -- Finish drawing a row of rectangles
-    joinRow stepY y [] m = do
-      r <- fresh
-      m' <- fresh
-      node $ YCut m (y + stepY) r m'
-      goRow stepX0 step left (y + stepY) [] m'
+    joinRow stepY y [] d = do
+      Wide2 _ d' <- node1 d $ YCut (y + stepY)
+      goRow stepX0 step left (y + stepY) [] d'
 
   tryCost graph
 
@@ -165,4 +156,3 @@ median xs = fromTuple $ go 100 (sumDist average) average
       in if best < oldDist
          then go step best bestPix
          else if step > 1 then go ((step+1) `div` 2) oldDist pix else pix
--}
