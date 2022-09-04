@@ -96,7 +96,7 @@ drawWithStep step image' = do
       | otherwise = do
           r <- fresh
           m' <- fresh
-          node $ XCut m down r m'
+          node $ XCut m left r m'
           return m'
     -- Start drawing rectangles
     start m = do
@@ -105,23 +105,12 @@ drawWithStep step image' = do
         m2 <- cutDownMargin m1
         m3 <- cutLeftMargin m2
         goRow stepX0 step left down [] m3
-    -- Draw an empty rectangle with width 'left'
-    {-
-    goRow0 stepX stepY y rs m
-      | left == 0 = goRow stepX stepY 0 y rs m
-      | otherwise = do
-        m' <- fresh
-        node $ Color m (packPixel background) m'
-        r' <- fresh
-        m'' <- fresh
-        node $ XCut m' left r' m''
-        goRow step stepY left y (r':rs) m'' -}
     -- Draw a rectangle with width stepX
     goRow stepX stepY x y rs m
-      | y >= up = do
+      | y > up = do
         m' <- fresh
         node $ Color m (packPixel background) m'
-      | x + stepX >= right = do
+      | x + stepX > right = do
         m' <- fresh
         let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + stepY - 1)],
                                                    x' <- [x .. min (width - 1) (x + stepX - 1)]]
@@ -138,7 +127,7 @@ drawWithStep step image' = do
         goRow step stepY (x + stepX) y (r':rs) m''
     -- Merge rectangles in the row
     joinRow stepY y (r:rs) m
-      | y + stepY >= up = pure ()
+      | y + stepY >= height = pure ()
       | otherwise = do
         m' <- fresh
         node $ Merge r m m'
