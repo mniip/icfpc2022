@@ -3,7 +3,7 @@ import Codec.Picture.Types
 import Control.Lens
 import Data.Monoid
 import Data.Maybe (mapMaybe)
-import Data.List (minimumBy)
+import Data.List (group, sort, sortBy, minimumBy)
 import Data.Function (on)
 import Control.Monad.State
 import Data.Text.IO qualified as T
@@ -33,6 +33,38 @@ stepSearch image = fst $ minimumBy (compare `on` snd) $ mapMaybe (\s -> drawWith
     where width = imageWidth image
           height = imageHeight image
 
+-- Colors with occurencies, outputs popular colors first.
+colorStats :: Image PixelRGBA8 -> [(Int, PixelRGBA8)]
+colorStats image = reverse . sortBy (compare `on` fst) . map (\g -> (length g, head g)) . group $
+                   sort [pixelAt image x y | x <- [0 .. width-1], y <- [0 .. height-1]]
+    where width = imageWidth image
+          height = imageHeight image
+
+-- boundingLine [T, T, T, F, F, T, F, T, T] == (3, 6)
+--                        ^  ^  ^  ^
+boundingLine :: [Bool] -> (Int, Int)
+boundingLine ls = let left = length $ takeWhile id ls
+                      right = length . takeWhile id $ reverse ls
+                  in (left, length ls - right - 1)
+
+-- Find bounding box with a given background color.
+boundingBoxChroma :: Image PixelRGBA8 -> PixelRGBA8 -> ((Int, Int), (Int, Int))
+boundingBoxChroma image color = ((left, down), (right, up))
+    where width = imageWidth image
+          height = imageHeight image
+          horLine y = [pixelAt image x y | x <- [0 .. width-1]]
+          verLine x = [pixelAt image x y | y <- [0 .. height-1]]
+          align = foldl1 (\(a, b) (c, d) -> (min a c, max b d))
+          (left, right) = align $ map (boundingLine . map (== color) . horLine) [0 .. height-1]
+          (down, up) = align $ map (boundingLine . map (== color) . verLine) [0 .. width-1]
+
+-- Outputs the best bounding box and the respective background color.
+boundingBox :: Image PixelRGBA8 -> (((Int, Int), (Int, Int)), PixelRGBA8)
+boundingBox image = minimumBy (compare `on` area) boxes
+    where popularColors = map snd . take 10 $ colorStats image
+          boxes = map (\c -> (boundingBoxChroma image c, c)) popularColors
+          area (((l, d), (r, u)), _) = (r-l)*(u-d)
+
 -- "Pixelate" the image with a given step, return the command graph and new score.
 drawWithStep :: Int -> Image PixelRGBA8 -> Maybe (Graph, Int)
 drawWithStep step image' = do
@@ -40,6 +72,7 @@ drawWithStep step image' = do
     image = vflippedImage image'
     width = imageWidth image
     height = imageHeight image
+    (((left, down), (right, up)), background) = boundingBox image
 
     tryCost g = case runRender (XY width height) $ runCostT (runTrace g (XY width height)) of
                   (((Nothing, _), Sum cost), image'') -> Just $ (g, cost + compareImages image' image'')
@@ -49,10 +82,46 @@ drawWithStep step image' = do
     node n = modify $ _1 %~ addNode n
     stepX0 = let s = width `mod` step in if s == 0 then step else s
     stepY0 = let s = height `mod` step in if s == 0 then step else s
-    graph = fst $ execState (goRow stepX0 stepY0 0 0 [] 0) (emptyGraph, 0)
+    graph = fst $ execState (start 0) (emptyGraph, 0)
 
+    cutDownMargin m
+      | down == 0 = return m
+      | otherwise = do
+          r <- fresh
+          m' <- fresh
+          node $ YCut m down r m'
+          return m'
+    cutLeftMargin m
+      | left == 0 = return m
+      | otherwise = do
+          r <- fresh
+          m' <- fresh
+          node $ XCut m down r m'
+          return m'
+    -- Start drawing rectangles
+    start m = do
+        m1 <- fresh
+        node $ Color m (packPixel background) m1 -- Fill the background color in case it's not white
+        m2 <- cutDownMargin m1
+        m3 <- cutLeftMargin m2
+        goRow stepX0 step left down [] m3
+    -- Draw an empty rectangle with width 'left'
+    {-
+    goRow0 stepX stepY y rs m
+      | left == 0 = goRow stepX stepY 0 y rs m
+      | otherwise = do
+        m' <- fresh
+        node $ Color m (packPixel background) m'
+        r' <- fresh
+        m'' <- fresh
+        node $ XCut m' left r' m''
+        goRow step stepY left y (r':rs) m'' -}
+    -- Draw a rectangle with width stepX
     goRow stepX stepY x y rs m
-      | x + stepX >= width = do
+      | y >= up = do
+        m' <- fresh
+        node $ Color m (packPixel background) m'
+      | x + stepX >= right = do
         m' <- fresh
         let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + stepY - 1)],
                                                    x' <- [x .. min (width - 1) (x + stepX - 1)]]
@@ -67,17 +136,19 @@ drawWithStep step image' = do
         m'' <- fresh
         node $ XCut m' (x + stepX) r' m''
         goRow step stepY (x + stepX) y (r':rs) m''
+    -- Merge rectangles in the row
     joinRow stepY y (r:rs) m
-      | y + stepY >= height = pure ()
+      | y + stepY >= up = pure ()
       | otherwise = do
         m' <- fresh
         node $ Merge r m m'
         joinRow stepY y rs m'
+    -- Finish drawing a row of rectangles
     joinRow stepY y [] m = do
       r <- fresh
       m' <- fresh
       node $ YCut m (y + stepY) r m'
-      goRow stepX0 step 0 (y + stepY) [] m'
+      goRow stepX0 step left (y + stepY) [] m'
 
   tryCost graph
 
