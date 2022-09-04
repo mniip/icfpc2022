@@ -438,46 +438,46 @@ traceGraph size graph = case getGraphNode graph 0 of
       Right _ -> pure ()
 
 graphErrors :: XY Int -> Graph -> [(NodeId, InvalidNode)]
-graphErrors size prog = M.toList $ fst $ runIdentity $ traceGraph size prog
+graphErrors size graph = M.toList $ fst $ runIdentity $ traceGraph size graph
 
 tryGraphRunCost :: XY Int -> Graph -> Either (M.Map NodeId InvalidNode) Int
-tryGraphRunCost size prog = case runCostT (traceGraph size prog) size of
+tryGraphRunCost size graph = case runCostT (traceGraph size graph) size of
   ((errs, _), Sum cost)
     | M.null errs -> Right cost
     | otherwise -> Left errs
 
 graphRunCost :: XY Int -> Graph -> Int
-graphRunCost size prog = case tryGraphRunCost size prog of
+graphRunCost size graph = case tryGraphRunCost size graph of
   Right cost -> cost
   Left errs -> error $ intercalate "\n" $ map (\(i, err) -> "Node " <> show i <> ": " <> show err) $ M.toList errs
 
 renderErrors :: XY Int -> Graph -> (Image PixelRGBA8, M.Map NodeId InvalidNode)
-renderErrors size prog = case runRender size $ traceGraph size prog of
+renderErrors size graph = case runRender size $ traceGraph size graph of
   ((errs, _), image) -> (image, errs)
 
 renderGraph :: XY Int -> Graph -> Image PixelRGBA8
-renderGraph size prog = case renderErrors size prog of
+renderGraph size graph = case renderErrors size graph of
   (image, errs)
     | M.null errs -> image
     | otherwise -> error $ intercalate "\n" $ map (\(i, err) -> "Node " <> show i <> ": " <> show err) $ M.toList errs
 
 tryRenderWithCost :: XY Int -> Graph -> (Image PixelRGBA8, Either (M.Map NodeId InvalidNode) Int)
-tryRenderWithCost size prog = case runRender size $ runCostT (traceGraph size prog) of
+tryRenderWithCost size graph = case runRender size $ runCostT (traceGraph size graph) of
   (((errs, _), Sum cost), image)
     | M.null errs -> (image, Right cost)
     | otherwise -> (image, Left errs)
 
 renderWithCost :: XY Int -> Graph -> (Image PixelRGBA8, Int)
-renderWithCost size prog = case tryRenderWithCost size prog of
+renderWithCost size graph = case tryRenderWithCost size graph of
   (_, Left errs) -> error $ intercalate "\n" $ map (\(i, err) -> "Node " <> show i <> ": " <> show err) $ M.toList errs
   (image, Right cost) -> (image, cost)
 
 tryScoreGraph :: Image PixelRGBA8 -> Graph -> Either (M.Map NodeId InvalidNode) Int
-tryScoreGraph image prog = case tryRenderWithCost (XY (imageWidth image) (imageHeight image)) prog of
+tryScoreGraph image graph = case tryRenderWithCost (XY (imageWidth image) (imageHeight image)) graph of
   (_, Left err) -> Left err
   (image', Right cost) -> Right $ cost + compareImages image image'
 
 scoreGraph :: Image PixelRGBA8 -> Graph -> Int
-scoreGraph image prog = case tryScoreGraph image prog of
+scoreGraph image graph = case tryScoreGraph image graph of
   Left errs -> error $ intercalate "\n" $ map (\(i, err) -> "Node " <> show i <> ": " <> show err) $ M.toList errs
   Right score -> score

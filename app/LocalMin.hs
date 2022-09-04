@@ -50,10 +50,10 @@ main = getArgs >>= \case
             | otherwise -> do
               hPutStrLn stderr "No improvement"
 
-    initGraph <- fromISL . I.parseProgram <$> T.getContents
+    initGraph <- fromISL . I.parseProgram <$> T.readFile output
     let Just (_, initCost) = tryCost initGraph
     go initCost 40 initGraph
-  _ -> error "Usage: local <input.png> <inout.isl>"
+  _ -> error "Usage: localmin <input.png> <inout.isl>"
 
 shrinkGraphWith :: (forall n m. Node n m -> [Node n m]) -> Graph -> [Graph]
 shrinkGraphWith shr graph = topoSort graph >>= \i -> modifyNode i shr graph

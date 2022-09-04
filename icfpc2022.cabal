@@ -34,7 +34,8 @@ executable viz
     extensions:
         LambdaCase,
         ViewPatterns,
-        TemplateHaskell
+        TemplateHaskell,
+        DataKinds
 
 executable pixel
     main-is: Pixel.hs

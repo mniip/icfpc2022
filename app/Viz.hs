@@ -54,8 +54,7 @@ mkMouseData sz sdata ms = MouseData
 
 data GraphData = GraphData
   { _graph :: !Graph
-  , _allBlockMap :: !(M.Map NodeId (XY (MinMax Int)))
-  , _blockMap :: !(M.Map NodeId (XY (MinMax Int)))
+  , _blockMap :: !(M.Map (End 'False) (XY (MinMax Int)))
   , _resultImage :: !(Image PixelRGBA8)
   , _resultBitmap :: !Picture
   }
@@ -65,14 +64,12 @@ makeLenses ''GraphData
 mkGraphData :: XY Int -> Graph -> GraphData
 mkGraphData sz gr = GraphData
   { _graph = gr
-  , _allBlockMap = abm
-  , _blockMap = abm
+  , _blockMap = bm
   , _resultImage = image
   , _resultBitmap = imageToGloss image
   }
   where
-    image = renderGraph sz gr
-    abm = M.empty
+    ((_, bm), image) = runRender sz $ traceGraph sz gr
 
 data World = World
   { _outputImage :: !(Maybe (Image PixelRGBA8))
@@ -82,7 +79,7 @@ data World = World
   , _graphData :: !GraphData
   , _screenData :: !ScreenData
   , _mouseData :: !MouseData
-  , _hovering :: !(Maybe NodeId)
+  , _hovering :: !(Maybe (End 'False))
   }
 
 makeLenses ''World
@@ -94,8 +91,8 @@ drawScene :: World -> WriterT Picture IO ()
 drawScene world = do
   --forM_ (world ^. outputBitmap) tell
   tell $ world ^. graphData . resultBitmap
-  forM_ (world ^. graphData . blockMap . to M.toList) $ \(i, blk) -> do
-    censor (Color (if Just i == world ^. hovering then red else green)) $ do
+  forM_ (world ^. graphData . blockMap . to M.toList) $ \(d, blk) -> do
+    censor (Color (if Just d == world ^. hovering then red else green)) $ do
       tell $ wireframe $ fmap (fmap $ toGlossCoords (world ^. size)) blk
 
 draw :: World -> WriterT Picture IO ()
