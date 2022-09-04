@@ -72,6 +72,15 @@ executable clean
     extensions:
         LambdaCase
 
+executable swapper
+    main-is: Swapper.hs
+    build-depends: base, icfpc2022, text, JuicyPixels, lens, mtl, containers
+    hs-source-dirs: app
+    default-language: GHC2021
+    extensions:
+        LambdaCase,
+        DataKinds
+
 library
     build-depends:
         base,
