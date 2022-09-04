@@ -284,7 +284,7 @@ int main(int n_args, char **args) {
     if (n_args != 2) {
         //printf("Usage %s <input.isl>.\n Make some optimisations to input file and print the result to stdout.\n", args[0]);
         //return 0;
-        text = read_entire_file("log2.log");
+        text = read_entire_file("02.isl");
     } else {
         text = read_entire_file(args[1]);
     }
@@ -302,12 +302,12 @@ int main(int n_args, char **args) {
 
     int n_optimized = 0;
     for (;;) {
-        /*
-        std::cout << "#################################################\n";
+        #ifdef STEPS
+        std::cout << "################################################# 0\n";
         for (Command& c : commands) {
             std::cout << command_to_string(&c) << "\n";
         }
-        */
+        #endif
 
 
         bool found_something = false;
@@ -363,12 +363,13 @@ int main(int n_args, char **args) {
     }
 
     for (;;) {
-        /*
-        std::cout << "#################################################\n";
+        #ifdef STEPS
+        std::cout << "################################################# 1\n";
         for (Command& c : commands) {
             std::cout << command_to_string(&c) << "\n";
         }
-        */
+        #endif
+
         bool found_something = false;
         for (int i = commands.size() - 1; i - 2 >= 0; --i) {
             Command *c0 = &commands[i-2];
@@ -395,12 +396,13 @@ int main(int n_args, char **args) {
     }
 
     for (;;) {
-        /*
-        std::cout << "#################################################\n";
+        #ifdef STEPS
+        std::cout << "################################################# 2\n";
         for (Command& c : commands) {
             std::cout << command_to_string(&c) << "\n";
         }
-        */
+        #endif
+
 
         int merge_new_id = 1;
         bool found_something = false;
@@ -416,10 +418,15 @@ int main(int n_args, char **args) {
                 if (c0->type != cCUT_LINE) continue;  // todo cCUT_POINT
                 if (c1->type != cMERGE) continue;
 
+                if (c0->x == 123) {
+                  int k = 12345;
+                }
+
                 id = c0->block_id;
-                if (c1->block_id != id + ".0" && c1->block_id != id + ".1") continue;
+                if (c1->block_id  != id + ".0" && c1->block_id  != id + ".1") continue;
+                if (c1->block_id2 != id + ".0" && c1->block_id2 != id + ".1") continue;
                 for (int j = i; j + 2 < commands.size(); ++j) {
-                    commands[j] = std::move(commands[j+2]);
+                    commands[j] = commands[j+2];
                 }
                 commands.pop_back();
                 commands.pop_back();
@@ -434,19 +441,18 @@ int main(int n_args, char **args) {
             }
             found_something = true;
             ++n_optimized;
+            break;
         }
         if (!found_something) break;
     }
 
     for (;;) {
-        /*
-        std::cout << "#################################################\n";
+        #ifdef STEPS
+        std::cout << "################################################# 3\n";
         for (Command& c : commands) {
             std::cout << command_to_string(&c) << "\n";
         }
-        */
-
-
+        #endif
 
         bool found_something = false;
         int merge_new_id = 1;
@@ -521,17 +527,16 @@ int main(int n_args, char **args) {
                     commands.pop_back();
                     commands.pop_back();
 
+                    warning(merge0->block_id2 == std::to_string(merge_internal_part_id));
+                    merge0->block_id2 = id_closest;
 
-                    for (int k = i+1; k < j-1; ++k) {
+                    for (int k = i+1; k < j; ++k) {
                         Command *c = &commands[k];
                         id_replace_start_if_starts_with(c->block_id, cut1->block_id + ".1", cut0->block_id + ".1");
                         if (c->block_id2 != "") {
                             id_replace_start_if_starts_with(c->block_id2, cut1->block_id + ".1", cut0->block_id + ".1");
                         }
                     }
-
-                    warning(merge0->block_id2 == std::to_string(merge_internal_part_id));
-                    merge0->block_id2 = id_closest;
 
                     for (int k = j; k < commands.size(); ++k) {
                         Command *c = &commands[k];
@@ -553,7 +558,11 @@ int main(int n_args, char **args) {
         if (!found_something) break;
     }
 
-    // std::cout << "+++\n";
+
+    #ifdef STEPS
+    std::cout << "+++\n";
+    #endif
+
     std::cerr << "optimized " << n_optimized << " things\n";
     for (Command& c : commands) {
         std::cout << command_to_string(&c) << "\n";
