@@ -23,7 +23,7 @@ enum Command_Type {
     cMERGE
 };
 
-struct Command {
+struct Command_On_Strings {
     Command_Type type = cNONE;
     char axis = 'X';
     int x = 0, y = 0;
@@ -148,8 +148,8 @@ std::string read_id(Iter *s) {
     return ret;
 }
 
-Command line_to_command(std::string const& line) {
-    Command ret;
+Command_On_Strings line_to_command(std::string const& line) {
+    Command_On_Strings ret;
     if (line == "") return ret;
 
     Iter iterator;
@@ -208,7 +208,7 @@ Command line_to_command(std::string const& line) {
     return ret;
 }
 
-std::string command_to_string(Command *c) {
+std::string command_to_string(Command_On_Strings *c) {
     std::stringstream ss;
     if (c->type == cCUT_LINE) {
         int offset = c->axis == 'X' ? c->x : c->y;
@@ -290,7 +290,7 @@ int main(int n_args, char **args) {
     }
 
     std::vector<std::string> lines = lines_of_the_string(text);
-    std::vector<Command> commands;
+    std::vector<Command_On_Strings> commands;
     commands.reserve(lines.size());
     for (std::string const& line : lines) {
         if (line == "" || line == "\n") continue;
@@ -304,7 +304,7 @@ int main(int n_args, char **args) {
     for (;;) {
         #ifdef STEPS
         std::cout << "################################################# 0\n";
-        for (Command& c : commands) {
+        for (Command_On_Strings& c : commands) {
             std::cout << command_to_string(&c) << "\n";
         }
         #endif
@@ -314,10 +314,10 @@ int main(int n_args, char **args) {
         int merge_new_id = 1;
         for (int i = 0; i + 3 < commands.size(); ++i) {
             //std::cerr << "check from " << i << "\n";
-            Command *c0 = &commands[i];
-            Command *c1 = &commands[i+1];
-            Command *c2 = &commands[i+2];
-            Command *c3 = &commands[i+3];
+            Command_On_Strings *c0 = &commands[i];
+            Command_On_Strings *c1 = &commands[i+1];
+            Command_On_Strings *c2 = &commands[i+2];
+            Command_On_Strings *c3 = &commands[i+3];
             if (c0->type == cMERGE) {
                 merge_new_id += 1;
                 continue;
@@ -347,7 +347,7 @@ int main(int n_args, char **args) {
                 commands.pop_back();
                 commands.pop_back();
                 for (int j = i + 1; j < commands.size(); ++j) {
-                    Command *c = &commands[j];
+                    Command_On_Strings *c = &commands[j];
                     id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id, merge_new_id, c0->block_id);
                     if (c->block_id2 != "") {
                         id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id2, merge_new_id, c0->block_id);
@@ -365,16 +365,16 @@ int main(int n_args, char **args) {
     for (;;) {
         #ifdef STEPS
         std::cout << "################################################# 1\n";
-        for (Command& c : commands) {
+        for (Command_On_Strings& c : commands) {
             std::cout << command_to_string(&c) << "\n";
         }
         #endif
 
         bool found_something = false;
         for (int i = commands.size() - 1; i - 2 >= 0; --i) {
-            Command *c0 = &commands[i-2];
-            Command *c1 = &commands[i-1];
-            Command *c2 = &commands[i];
+            Command_On_Strings *c0 = &commands[i-2];
+            Command_On_Strings *c1 = &commands[i-1];
+            Command_On_Strings *c2 = &commands[i];
             if (c0->type != cSET_COLOR) continue;
             if (c1->type != cCUT_LINE)  continue; // todo cCUT_POINT
             if (c2->type != cSET_COLOR) continue;
@@ -398,7 +398,7 @@ int main(int n_args, char **args) {
     for (;;) {
         #ifdef STEPS
         std::cout << "################################################# 2\n";
-        for (Command& c : commands) {
+        for (Command_On_Strings& c : commands) {
             std::cout << command_to_string(&c) << "\n";
         }
         #endif
@@ -409,8 +409,8 @@ int main(int n_args, char **args) {
         for (int i = 0; i+1 < commands.size(); ++i) {
             std::string id;
             {
-                Command *c0 = &commands[i];
-                Command *c1 = &commands[i+1];
+                Command_On_Strings *c0 = &commands[i];
+                Command_On_Strings *c1 = &commands[i+1];
                 if (c0->type == cMERGE) {
                     merge_new_id += 1;
                     continue;
@@ -433,7 +433,7 @@ int main(int n_args, char **args) {
             }
 
             for (int j = i; j < commands.size(); ++j) {
-                Command *c = &commands[j];
+                Command_On_Strings *c = &commands[j];
                 id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id, merge_new_id, id);
                 if (c->block_id2 != "") {
                     id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id2, merge_new_id, id);
@@ -449,7 +449,7 @@ int main(int n_args, char **args) {
     for (;;) {
         #ifdef STEPS
         std::cout << "################################################# 3\n";
-        for (Command& c : commands) {
+        for (Command_On_Strings& c : commands) {
             std::cout << command_to_string(&c) << "\n";
         }
         #endif
@@ -458,8 +458,8 @@ int main(int n_args, char **args) {
         int merge_new_id = 1;
         for (int i = 0; i + 3 < commands.size(); ++i) {
             //std::cerr << "check from " << i << "\n";
-            Command *cut0   = &commands[i];
-            Command *cut1   = &commands[i+1];
+            Command_On_Strings *cut0   = &commands[i];
+            Command_On_Strings *cut1   = &commands[i+1];
             if (cut0->type == cMERGE) {
                 merge_new_id += 1;
                 continue;
@@ -482,7 +482,7 @@ int main(int n_args, char **args) {
                     if (j > i + 2 && commands[j-1].type == cMERGE) merge_internal_part_id += 1;
 
                     {
-                        Command *c = &commands[j];
+                        Command_On_Strings *c = &commands[j];
                         if (c->type == cMERGE && c->block_id == unused1) {}
                         else
                         if (c->block_id == id_closest || c->block_id2 == id_closest) {
@@ -501,14 +501,14 @@ int main(int n_args, char **args) {
                         }
                     }
 
-                    Command *merge1 = &commands[j];
+                    Command_On_Strings *merge1 = &commands[j];
                     // TODO: если встетилось слияние двух нетронутых блоков, то ведь тоже можно кое-что почистить
                     if (merge1->block_id == unused0 || merge1->block_id2 == unused0) break;
                     if (merge1->block_id != unused1) continue; // TODO: не полагаться на то что нужный айдишник первый
                     if (merge1->type != cMERGE) break;
                     if (merge1->block_id2 != id_closest) break;
 
-                    Command *merge0 = &commands[j+1];
+                    Command_On_Strings *merge0 = &commands[j+1];
                     if (merge0->type     != cMERGE) break;
                     if (merge0->block_id != unused0) break; // TODO: не полагаться на то что нужный айдишник первый
                     if (merge0->block_id2 != std::to_string(merge_internal_part_id)) break;
@@ -531,7 +531,7 @@ int main(int n_args, char **args) {
                     merge0->block_id2 = id_closest;
 
                     for (int k = i+1; k < j; ++k) {
-                        Command *c = &commands[k];
+                        Command_On_Strings *c = &commands[k];
                         id_replace_start_if_starts_with(c->block_id, cut1->block_id + ".1", cut0->block_id + ".1");
                         if (c->block_id2 != "") {
                             id_replace_start_if_starts_with(c->block_id2, cut1->block_id + ".1", cut0->block_id + ".1");
@@ -539,7 +539,7 @@ int main(int n_args, char **args) {
                     }
 
                     for (int k = j; k < commands.size(); ++k) {
-                        Command *c = &commands[k];
+                        Command_On_Strings *c = &commands[k];
                         id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id, merge_internal_part_id, "");
                         if (c->block_id2 != "") {
                             id_replace_start_if_starts_with_equal_number_and_decrement_if_starts_with_bigger_number(c->block_id2, merge_internal_part_id, "");
@@ -564,7 +564,7 @@ int main(int n_args, char **args) {
     #endif
 
     std::cerr << "optimized " << n_optimized << " things\n";
-    for (Command& c : commands) {
+    for (Command_On_Strings& c : commands) {
         std::cout << command_to_string(&c) << "\n";
     }
     return 0;
