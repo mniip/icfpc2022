@@ -22,7 +22,7 @@ main = do
     [sStep, input] | Just step <- readMaybe sStep, step >= 0 -> readImage input >>= \case
       Left err -> error err
       Right (ImageRGBA8 image') -> if step == 0 then T.putStrLn . I.printProgram . toISL $ stepSearch image'
-                                                else let Just (g, _) = drawWithStep step image'
+                                                else let Just (g, sc) = drawWithStep step image'
                                                      in T.putStrLn . I.printProgram $ toISL g
       Right _ -> error "Invalid pixel format"
     _ -> error "Usage: pixel <N> <input.png>"
@@ -74,7 +74,7 @@ drawWithStep step image' = do
     height = imageHeight image
     (((left, down), (right, up)), background) = boundingBox image
 
-    tryCost g = case tryScoreGraph image g of
+    tryCost g = case tryScoreGraph image' g of
       Left _ -> Nothing
       Right score -> Just (g, score)
 
@@ -109,7 +109,10 @@ drawWithStep step image' = do
       | y > up = do
         node1 d $ Color (packPixel background)
         pure ()
-      | x + stepX > right = do
+      | x > right = do
+        Wide1 d' <- node1 d $ Color (packPixel background)
+        joinRow stepY y rs d'
+      | x + stepX >= width = do
         let rgba = median $ [pixelAt image x' y' | y' <- [y .. min (height - 1) (y + stepY - 1)],
                                                    x' <- [x .. min (width - 1) (x + stepX - 1)]]
         Wide1 d' <- node1 d $ Color (packPixel rgba)
