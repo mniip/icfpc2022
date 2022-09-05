@@ -26,8 +26,10 @@ main = do
       Right (ImageRGBA8 image') -> do
           grid <- readGrid `fmap` getContents
           let swaps = keepImproving image' grid
+              grid' = foldl swapInGrid grid swaps
               n = length $ concat grid
-          putStrLn $ printSwaps (optimizeSwaps swaps n)
+          putStr $ printSwaps (optimizeSwaps swaps n)
+          putStr $ printColors (recolor image' grid')
           -- savePngImage "grid.png" (ImageRGBA8 $ drawGrid 10 grid)
       Right _ -> error "Invalid pixel format"
     _ -> error "Usage: swapper <input.png>"
@@ -62,7 +64,26 @@ dist (PixelRGBA8 r1 g1 b1 a1) (PixelRGBA8 r2 g2 b2 a2)
                (fromIntegral b1 - fromIntegral b2)^2 + (fromIntegral a1 - fromIntegral a2)^2
 
 distToCell :: Image PixelRGBA8 -> PixelRGBA8 -> Int -> (Int, Int) -> Int
-distToCell image color size (x0, y0) = round . (0.005*) $ sum [dist color (pixelAt image (x0*size + x) (y0*size + y)) | x <- [0..size-1], y <- [0..size-1]]
+distToCell image color size (x0, y0) = round . (0.005*) $
+                                       sum [dist color (pixelAt image (x0*size + x) (y0*size + y)) | x <- [0..size-1], y <- [0..size-1]]
+
+bestColor :: Image PixelRGBA8 -> Int -> (Int, Int) -> PixelRGBA8
+bestColor image size (x0, y0) = median [pixelAt image (x0*size + x) (y0*size + y) | x <- [0..size-1], y <- [0..size-1]]
+
+-- Try recoloring each cell of the grid to match the image.
+recolor :: Image PixelRGBA8 -> Grid -> [(Int, PixelRGBA8)]
+recolor image grid = map snd . filter (\x -> fst x < 0) $ map try [0..(len*len-1)]
+    where width = imageWidth image
+          len = length grid
+          size = width `div` len
+          cost = len*len*5
+          try i = let (coord, color) = inGrid grid i
+                      color' = bestColor image size coord
+                  in (cost + distToCell image color' size coord - distToCell image color size coord, (i, color'))
+
+printColors :: [(Int, PixelRGBA8)] -> String
+printColors = unlines . map printColor
+    where printColor (i, PixelRGBA8 r g b a) = "color [" ++ show i ++ "] [" ++ show r ++ "," ++ show g ++ "," ++ show b ++ "," ++ show a ++ "]"
 
 bakedDists :: Image PixelRGBA8 -> Int -> Grid -> M.Map (Int, (Int, Int)) Int
 bakedDists image size grid = M.fromList $ do
@@ -109,13 +130,9 @@ improveGrid image baked grid allowed = minimumBy (compare `on` (\(s, _, _) -> s)
                                  else head suggestions -}
     where len = length grid
           size = width `div` len -- we assume images are square
-          cost = len*len*3
           width = imageWidth image
           height = imageHeight image
           grids = map (\(s, t) -> (s, t, swapInGrid grid t)) allowed
-          gridDist (i1, i2) = let (crds1, _) = inGrid grid i1
-                                  (crds2, _) = inGrid grid i2
-                              in baked M.! (i1, crds2) + baked M.! (i2, crds1) - baked M.! (i1, crds1) - baked M.! (i2, crds2) + cost
 
 judgeSwaps :: M.Map (Int, (Int, Int)) Int -> Grid -> [Swap] -> [(Int, Swap)]
 judgeSwaps baked grid = map (\t -> (gridDist t, t))
@@ -176,3 +193,27 @@ toTrans = concatMap cyc
 
 optimizeSwaps :: [Swap] -> Int -> [(Int, Int)]
 optimizeSwaps swaps n = toTrans $ orbits swaps n
+
+median :: [PixelRGBA8] -> PixelRGBA8
+median [x] = x
+median xs = fromTuple $ go 100 (sumDist average) average
+  where
+    toTuple :: PixelRGBA8 -> (Int, Int, Int, Int)
+    toTuple (PixelRGBA8 r g b a) = (fromIntegral r, fromIntegral g, fromIntegral b, fromIntegral a)
+    fromTuple (r, g, b, a) = PixelRGBA8 (fromIntegral r) (fromIntegral g) (fromIntegral b) (fromIntegral a)
+    xs' = map toTuple xs
+    sumDist x = sum $ dist x <$> xs'
+    dist (r1, g1, b1, a1) (r2, g2, b2, a2) = sqrt . fromIntegral $ (r1 - r2)^2 + (g1 - g2)^2 + (b1 - b2)^2 + (a1 - a2)^2 :: Float
+    (r1, g1, b1, a1) .+. (r2, g2, b2, a2) = (r1+r2, g1+g2, b1+b2, a1+a2)
+    len = length xs
+    average = let (r, g, b, a) = foldr1 (.+.) xs' in (r `div` len, g `div` len, b `div` len, a `div` len)
+    dirs = [(r, g, b, a) | r <- [0, -1, 1], g <- [0, -1, 1], b <- [0, -1, 1], a <- [0, -1, 1],
+                           r^2 + g^2 + b^2 + a^2 <= 1, r^2 + g^2 + b^2 + a^2 /= 0]
+    inside (r, g, b, a) = 0 <= r && r <= 255 && 0 <= g && g <= 255 && 0 <= b && b <= 255 && 0 <= a && a <= 255
+    go step oldDist pix =
+      let nbrs = filter inside $ map (\(r, g, b, a) -> pix .+. (step*r, step*g, step*b, step*a)) dirs
+          dists = map (\n -> (sumDist n, n)) nbrs
+          (best, bestPix) = minimumBy (compare `on` fst) dists
+      in if best < oldDist
+         then go step best bestPix
+         else if step > 1 then go ((step+1) `div` 2) oldDist pix else pix
