@@ -29,8 +29,8 @@ class ExitScopeHelp {
 #define FUNCTION_NAME ""
 #endif
 
-#define den_warning(Expr) if (!(Expr)) SDL_Log("warning! %s " #Expr "\n", FUNCTION_NAME);
-#define log_warning(Expr, Format, ...) if (!(Expr)) SDL_Log("warning! %s " #Expr " " Format "\n", FUNCTION_NAME, __VA_ARGS__);
+#define den_warning(Expr) if (!(Expr)) SDL_Log("den_warning! %s " #Expr "\n", FUNCTION_NAME);
+#define log_warning(Expr, Format, ...) if (!(Expr)) SDL_Log("den_warning! %s " #Expr " " Format "\n", FUNCTION_NAME, __VA_ARGS__);
 
 #include <assert.h>
 
@@ -44,9 +44,14 @@ class ExitScopeHelp {
 #include <chrono>
 #include <string>
 #include <cmath>
+#include <vector>
 #include <map>
 #include <string>
+#include <sstream>
+#define INLUDE_JSON 0
+#if INLUDE_JSON
 #include "json.hpp"
+#endif
 
 using u8 = uint8_t;
 using u16 = uint16_t;
@@ -64,6 +69,7 @@ SDL_Window   *g_window;
 #define PS 2
 #define X 0
 #define Y 1
+#define SNAP_GRID_SIZE 10
 int g_canvas_zero_lower_left[2] = {(0)*PS, (WIN_H)*PS};
 SDL_Renderer *g_renderer;
 TTF_Font     *g_font;
@@ -75,7 +81,9 @@ int main(int const n_args, char ** const args) {
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) == -1) {SDL_Log("Could not initialize SDL: %s.\n", SDL_GetError()); return -1;}
     defer {SDL_Quit();};
 
+    #if INLUDE_JSON
     //read_blocks("26.initial.json");
+    #endif
     main_loop();
 
     return 0;
@@ -226,6 +234,15 @@ struct Command {
     int x = 0, y = 0;
     int block_id = 0;
     int block_id2 = 0;
+    u8 R, G, B, A;
+};
+
+struct Command_On_Strings {
+    Command_Type type = cNONE;
+    char axis = 'X';
+    int x = 0, y = 0;
+    std::string block_id  = "";
+    std::string block_id2 = "";
     u8 R, G, B, A;
 };
 
@@ -390,6 +407,7 @@ void undo() {
         case cNONE: return;
         case cCUT_LINE: undo_cut_line(); return;
     }
+    SDL_Log("no undo for you");
 }
 
 void redo_cut_line() {
@@ -557,7 +575,7 @@ void main_loop() {
 
                 if (mouse_x >= 400 || mouse_x < 0 || mouse_y >= 400 || mouse_y < 0) { mouse_x = PIC_W + 2; mouse_y = PIC_H + 2; }
                 else {
-                    int m = 20;
+                    int m = SNAP_GRID_SIZE;
                     mouse_x = mouse_x - (mouse_x % m);
                     mouse_y = mouse_y - (mouse_y % m);
                     if (event.type == SDL_MOUSEBUTTONDOWN) {
@@ -635,7 +653,7 @@ void main_loop() {
 }
 
 std::string read_entire_file(std::string const& filename) {
-    FILE  *f = fopen(filename.c_str(), "r");
+    FILE  *f = fopen(filename.c_str(), "rb");
 
     long size;
     {
@@ -653,6 +671,8 @@ std::string read_entire_file(std::string const& filename) {
     return ret;
 }
 
+// JSON PART
+#if INLUDE_JSON
 /*
 example:
 {"width": 400, "height": 400, "blocks": [{"blockId": "0", "bottomLeft": [0, 0], "topRight": [40, 40], "color": [255, 255, 255, 255]}, {"blockId": "1", "bottomLeft": [0, 40], "topRight": [40, 80], "color": [255, 255, 255, 255]}, {"blockId": "2", "bottomLeft": [0, 80], "topRight": [40, 120], "color": [255, 255, 255, 255]}, {"blockId": "3", "bottomLeft": [0, 120], "topRight": [40, 160], "color": [255, 255, 255, 255]}, {"blockId": "4", "bottomLeft": [0, 160], "topRight": [40, 200], "color": [255, 255, 255, 255]}, {"blockId": "5", "bottomLeft": [0, 200], "topRight": [40, 240], "color": [255, 255, 255, 255]}, {"blockId": "6", "bottomLeft": [0, 240], "topRight": [40, 280], "color": [0, 0, 0, 255]}, {"blockId": "7", "bottomLeft": [0, 280], "topRight": [40, 320], "color": [0, 0, 0, 255]}, {"blockId": "8", "bottomLeft": [0, 320], "topRight": [40, 360], "color": [0, 0, 0, 255]}, {"blockId": "9", "bottomLeft": [0, 360], "topRight": [40, 400], "color": [255, 255, 255, 255]}, {"blockId": "10", "bottomLeft": [40, 0], "topRight": [80, 40], "color": [255, 255, 255, 255]}, {"blockId": "11", "bottomLeft": [40, 40], "topRight": [80, 80], "color": [255, 255, 255, 255]}, {"blockId": "12", "bottomLeft": [40, 80], "topRight": [80, 120], "color": [0, 0, 0, 255]}, {"blockId": "13", "bottomLeft": [40, 120], "topRight": [80, 160], "color": [255, 255, 255, 255]}, {"blockId": "14", "bottomLeft": [40, 160], "topRight": [80, 200], "color": [255, 255, 255, 255]}, {"blockId": "15", "bottomLeft": [40, 200], "topRight": [80, 240], "color": [0, 0, 0, 255]}, {"blockId": "16", "bottomLeft": [40, 240], "topRight": [80, 280], "color": [255, 255, 255, 255]}, {"blockId": "17", "bottomLeft": [40, 280], "topRight": [80, 320], "color": [255, 255, 255, 255]}, {"blockId": "18", "bottomLeft": [40, 320], "topRight": [80, 360], "color": [255, 255, 255, 255]}, {"blockId": "19", "bottomLeft": [40, 360], "topRight": [80, 400], "color": [0, 0, 0, 255]}, {"blockId": "20", "bottomLeft": [80, 0], "topRight": [120, 40], "color": [255, 255, 255, 255]}, {"blockId": "21", "bottomLeft": [80, 40], "topRight": [120, 80], "color": [0, 0, 0, 255]}, {"blockId": "22", "bottomLeft": [80, 80], "topRight": [120, 120], "color": [0, 0, 0, 255]}, {"blockId": "23", "bottomLeft": [80, 120], "topRight": [120, 160], "color": [0, 0, 0, 255]}, {"blockId": "24", "bottomLeft": [80, 160], "topRight": [120, 200], "color": [0, 0, 0, 255]}, {"blockId": "25", "bottomLeft": [80, 200], "topRight": [120, 240], "color": [255, 255, 255, 255]}, {"blockId": "26", "bottomLeft": [80, 240], "topRight": [120, 280], "color": [255, 255, 255, 255]}, {"blockId": "27", "bottomLeft": [80, 280], "topRight": [120, 320], "color": [255, 255, 255, 255]}, {"blockId": "28", "bottomLeft": [80, 320], "topRight": [120, 360], "color": [255, 255, 255, 255]}, {"blockId": "29", "bottomLeft": [80, 360], "topRight": [120, 400], "color": [255, 255, 255, 255]}, {"blockId": "30", "bottomLeft": [120, 0], "topRight": [160, 40], "color": [0, 0, 0, 255]}, {"blockId": "31", "bottomLeft": [120, 40], "topRight": [160, 80], "color": [0, 0, 0, 255]}, {"blockId": "32", "bottomLeft": [120, 80], "topRight": [160, 120], "color": [0, 0, 0, 255]}, {"blockId": "33", "bottomLeft": [120, 120], "topRight": [160, 160], "color": [255, 255, 255, 255]}, {"blockId": "34", "bottomLeft": [120, 160], "topRight": [160, 200], "color": [0, 0, 0, 255]}, {"blockId": "35", "bottomLeft": [120, 200], "topRight": [160, 240], "color": [255, 255, 255, 255]}, {"blockId": "36", "bottomLeft": [120, 240], "topRight": [160, 280], "color": [255, 255, 255, 255]}, {"blockId": "37", "bottomLeft": [120, 280], "topRight": [160, 320], "color": [255, 255, 255, 255]}, {"blockId": "38", "bottomLeft": [120, 320], "topRight": [160, 360], "color": [255, 255, 255, 255]}, {"blockId": "39", "bottomLeft": [120, 360], "topRight": [160, 400], "color": [0, 0, 0, 255]}, {"blockId": "40", "bottomLeft": [160, 0], "topRight": [200, 40], "color": [255, 255, 255, 255]}, {"blockId": "41", "bottomLeft": [160, 40], "topRight": [200, 80], "color": [0, 0, 0, 255]}, {"blockId": "42", "bottomLeft": [160, 80], "topRight": [200, 120], "color": [0, 0, 0, 255]}, {"blockId": "43", "bottomLeft": [160, 120], "topRight": [200, 160], "color": [255, 255, 255, 255]}, {"blockId": "44", "bottomLeft": [160, 160], "topRight": [200, 200], "color": [255, 255, 255, 255]}, {"blockId": "45", "bottomLeft": [160, 200], "topRight": [200, 240], "color": [0, 0, 0, 255]}, {"blockId": "46", "bottomLeft": [160, 240], "topRight": [200, 280], "color": [0, 0, 0, 255]}, {"blockId": "47", "bottomLeft": [160, 280], "topRight": [200, 320], "color": [0, 0, 0, 255]}, {"blockId": "48", "bottomLeft": [160, 320], "topRight": [200, 360], "color": [255, 255, 255, 255]}, {"blockId": "49", "bottomLeft": [160, 360], "topRight": [200, 400], "color": [255, 255, 255, 255]}, {"blockId": "50", "bottomLeft": [200, 0], "topRight": [240, 40], "color": [0, 0, 0, 255]}, {"blockId": "51", "bottomLeft": [200, 40], "topRight": [240, 80], "color": [0, 0, 0, 255]}, {"blockId": "52", "bottomLeft": [200, 80], "topRight": [240, 120], "color": [255, 255, 255, 255]}, {"blockId": "53", "bottomLeft": [200, 120], "topRight": [240, 160], "color": [255, 255, 255, 255]}, {"blockId": "54", "bottomLeft": [200, 160], "topRight": [240, 200], "color": [255, 255, 255, 255]}, {"blockId": "55", "bottomLeft": [200, 200], "topRight": [240, 240], "color": [0, 0, 0, 255]}, {"blockId": "56", "bottomLeft": [200, 240], "topRight": [240, 280], "color": [255, 255, 255, 255]}, {"blockId": "57", "bottomLeft": [200, 280], "topRight": [240, 320], "color": [0, 0, 0, 255]}, {"blockId": "58", "bottomLeft": [200, 320], "topRight": [240, 360], "color": [255, 255, 255, 255]}, {"blockId": "59", "bottomLeft": [200, 360], "topRight": [240, 400], "color": [0, 0, 0, 255]}, {"blockId": "60", "bottomLeft": [240, 0], "topRight": [280, 40], "color": [0, 0, 0, 255]}, {"blockId": "61", "bottomLeft": [240, 40], "topRight": [280, 80], "color": [0, 0, 0, 255]}, {"blockId": "62", "bottomLeft": [240, 80], "topRight": [280, 120], "color": [0, 0, 0, 255]}, {"blockId": "63", "bottomLeft": [240, 120], "topRight": [280, 160], "color": [0, 0, 0, 255]}, {"blockId": "64", "bottomLeft": [240, 160], "topRight": [280, 200], "color": [255, 255, 255, 255]}, {"blockId": "65", "bottomLeft": [240, 200], "topRight": [280, 240], "color": [255, 255, 255, 255]}, {"blockId": "66", "bottomLeft": [240, 240], "topRight": [280, 280], "color": [0, 0, 0, 255]}, {"blockId": "67", "bottomLeft": [240, 280], "topRight": [280, 320], "color": [0, 0, 0, 255]}, {"blockId": "68", "bottomLeft": [240, 320], "topRight": [280, 360], "color": [0, 0, 0, 255]}, {"blockId": "69", "bottomLeft": [240, 360], "topRight": [280, 400], "color": [0, 0, 0, 255]}, {"blockId": "70", "bottomLeft": [280, 0], "topRight": [320, 40], "color": [255, 255, 255, 255]}, {"blockId": "71", "bottomLeft": [280, 40], "topRight": [320, 80], "color": [0, 0, 0, 255]}, {"blockId": "72", "bottomLeft": [280, 80], "topRight": [320, 120], "color": [255, 255, 255, 255]}, {"blockId": "73", "bottomLeft": [280, 120], "topRight": [320, 160], "color": [0, 0, 0, 255]}, {"blockId": "74", "bottomLeft": [280, 160], "topRight": [320, 200], "color": [255, 255, 255, 255]}, {"blockId": "75", "bottomLeft": [280, 200], "topRight": [320, 240], "color": [255, 255, 255, 255]}, {"blockId": "76", "bottomLeft": [280, 240], "topRight": [320, 280], "color": [0, 0, 0, 255]}, {"blockId": "77", "bottomLeft": [280, 280], "topRight": [320, 320], "color": [255, 255, 255, 255]}, {"blockId": "78", "bottomLeft": [280, 320], "topRight": [320, 360], "color": [0, 0, 0, 255]}, {"blockId": "79", "bottomLeft": [280, 360], "topRight": [320, 400], "color": [0, 0, 0, 255]}, {"blockId": "80", "bottomLeft": [320, 0], "topRight": [360, 40], "color": [0, 0, 0, 255]}, {"blockId": "81", "bottomLeft": [320, 40], "topRight": [360, 80], "color": [0, 0, 0, 255]}, {"blockId": "82", "bottomLeft": [320, 80], "topRight": [360, 120], "color": [255, 255, 255, 255]}, {"blockId": "83", "bottomLeft": [320, 120], "topRight": [360, 160], "color": [255, 255, 255, 255]}, {"blockId": "84", "bottomLeft": [320, 160], "topRight": [360, 200], "color": [255, 255, 255, 255]}, {"blockId": "85", "bottomLeft": [320, 200], "topRight": [360, 240], "color": [255, 255, 255, 255]}, {"blockId": "86", "bottomLeft": [320, 240], "topRight": [360, 280], "color": [0, 0, 0, 255]}, {"blockId": "87", "bottomLeft": [320, 280], "topRight": [360, 320], "color": [255, 255, 255, 255]}, {"blockId": "88", "bottomLeft": [320, 320], "topRight": [360, 360], "color": [255, 255, 255, 255]}, {"blockId": "89", "bottomLeft": [320, 360], "topRight": [360, 400], "color": [255, 255, 255, 255]}, {"blockId": "90", "bottomLeft": [360, 0], "topRight": [400, 40], "color": [255, 255, 255, 255]}, {"blockId": "91", "bottomLeft": [360, 40], "topRight": [400, 80], "color": [255, 255, 255, 255]}, {"blockId": "92", "bottomLeft": [360, 80], "topRight": [400, 120], "color": [0, 0, 0, 255]}, {"blockId": "93", "bottomLeft": [360, 120], "topRight": [400, 160], "color": [255, 255, 255, 255]}, {"blockId": "94", "bottomLeft": [360, 160], "topRight": [400, 200], "color": [255, 255, 255, 255]}, {"blockId": "95", "bottomLeft": [360, 200], "topRight": [400, 240], "color": [0, 0, 0, 255]}, {"blockId": "96", "bottomLeft": [360, 240], "topRight": [400, 280], "color": [0, 0, 0, 255]}, {"blockId": "97", "bottomLeft": [360, 280], "topRight": [400, 320], "color": [0, 0, 0, 255]}, {"blockId": "98", "bottomLeft": [360, 320], "topRight": [400, 360], "color": [0, 0, 0, 255]}, {"blockId": "99", "bottomLeft": [360, 360], "topRight": [400, 400], "color": [255, 255, 255, 255]}]}
@@ -702,4 +722,207 @@ void read_blocks(char const* filename) {
 
     fputs(o, f);
     fclose(f);
+}
+#endif
+
+// PARSING PART
+
+
+std::vector<std::string> lines_of_the_string(std::string s) {
+    std::vector<std::string> ret;
+    int line_start = 0;
+    for (int i = 0; i <= s.size(); ++i) {
+        if (i == s.size() || s[i] == '\n' || s[i] == '\r') {
+            ret.push_back("");
+            for (int j = line_start; j < i; ++j) {
+                ret.back().push_back(s[j]);
+            }
+            ret.back().push_back('\n');
+            line_start = i + 1;
+        }
+    }
+    return ret;
+}
+
+struct Iter {
+    char const* c;
+    int         size;
+};
+
+void advance(Iter *s) {
+    if (s->size == 0) return;
+    s->c++;
+    s->size--;
+}
+
+static inline char get(Iter *s) {
+    return *s->c;
+}
+
+static inline char pop_internal(Iter *s, char const* expected, int line) {
+    den_warning(s->size);
+    char c = get(s);
+    if (expected) {
+        log_warning(c == *expected, "c=%c e=%s line=%d", c, expected, line);
+    }
+    advance(s);
+    return c;
+}
+
+#define pop(S, E) pop_internal(S, E, __LINE__)
+
+void skip(Iter *s, char const* cs) {
+    if (!cs[0]) return;
+    if (!cs[1]) {
+        char c = cs[0];
+        while (s->size && get(s) == c) advance(s);
+        return;
+    }
+    for (;;) {
+        char const* c = cs;
+        while (*c) {
+            if (!s->size || get(s) != *c++) return;
+            advance(s);
+        }
+    }
+}
+
+std::string read_word(Iter *s) {
+    skip(s, " ");
+    std::string ret;
+    while ('a' <= get(s) && get(s) <= 'z') {
+        ret.push_back(get(s));
+        advance(s);
+    }
+    return ret;
+}
+
+int read_int(Iter *s) {
+    skip(s, " ");
+    int ret = 0;
+    while ('0' <= get(s) && get(s) <= '9') {
+        int digit = get(s) - '0';
+        ret *= 10;
+        ret += digit;
+        advance(s);
+    }
+    return ret;
+}
+
+std::string read_id(Iter *s) {
+    skip(s, " ");
+    pop(s, "[");
+      std::string ret;
+      while (get(s) != ']') {
+          if (!(get(s) == '.' || ('0' <= get(s) && get(s) <= '9'))) {
+            int k = 1324;
+          }
+          den_warning(get(s) == '.' || ('0' <= get(s) && get(s) <= '9'));
+          ret.push_back(get(s));
+          advance(s);
+      }
+    pop(s, "]");
+    return ret;
+}
+
+void command_from_command_on_strings(Command *o, Command_On_Strings *c) {
+    #define C(Field) o->Field = c->Field
+    C(type);
+    den_warning(c->axis == 'X' || c->axis == 'Y');
+    o->axis = c->axis == 'X' ? VERTICAL : HORIZONTAL;
+    C(x); C(y);
+    log_warning(string_to_id.find(c->block_id)  != string_to_id.end(), "id was '%s'", c->block_id.c_str());
+    o->block_id = string_to_id[c->block_id];
+    if (c->block_id2 != "") {
+        log_warning(string_to_id.find(c->block_id2) != string_to_id.end(), "id2 was '%s'", c->block_id2.c_str());
+        o->block_id2 = string_to_id[c->block_id2];
+    }
+    C(R); C(G); C(B); C(A);
+    #undef C
+}
+
+Command_On_Strings line_to_command(std::string const& line) {
+    Command_On_Strings ret;
+    if (line == "") return ret;
+
+    Iter iterator;
+    Iter *s = &iterator;
+    s->c = line.data();
+    s->size = (int)line.size();
+    std::string name = read_word(s);
+
+    // block is common for all commands
+    ret.block_id = read_id(s);
+
+    if (name == "cut") {
+        skip(s, " ");
+        pop(s, "[");
+
+        char axis = get(s);
+        if (axis == 'X' || axis == 'Y') {
+            ret.type = cCUT_LINE;
+            ret.axis = pop(s, 0);
+            pop(s, "]");
+            skip(s, " ");
+            pop(s, "[");
+                if (axis == 'X') {
+                    ret.x = read_int(s);
+                } else {
+                    ret.y = read_int(s);
+                }
+            pop(s, "]");
+        } else {
+            ret.type = cCUT_POINT;
+            ret.x = read_int(s);
+            pop(s, ","); ret.y = read_int(s);
+            pop(s, "]");
+        }
+        return ret;
+    }
+
+    if (name == "color") {
+        ret.type = cSET_COLOR;
+        skip(s, " ");
+        pop(s, "[");
+            ret.R = (u8)read_int(s);
+            pop(s, ","); ret.G = (u8)read_int(s);
+            pop(s, ","); ret.B = (u8)read_int(s);
+            pop(s, ","); ret.A = (u8)read_int(s);
+        pop(s, "]");
+        return ret;
+    }
+
+    if (name == "merge") {
+        ret.type = cMERGE;
+        ret.block_id2 = read_id(s);
+        return ret;
+    }
+
+    if (name == "swap") {
+        ret.type = cSWAP;
+        ret.block_id2 = read_id(s);
+        return ret;
+    }
+
+    return ret;
+}
+
+std::string command_on_strings_to_string(Command_On_Strings *c) {
+    std::stringstream ss;
+    if (c->type == cCUT_LINE) {
+        int offset = c->axis == 'X' ? c->x : c->y;
+        ss << "cut[" << c->block_id << "][" << c->axis << "][" << offset << "]";
+    }
+    if (c->type == cCUT_POINT) {
+        ss << "cut[" << c->block_id << "][" << c->x << "," << c->y << "]";
+    }
+    if (c->type == cSET_COLOR) {
+        ss << "color[" << c->block_id << "][" << (int)c->R << "," << (int)c->G << "," << (int)c->B << "," << (int)c->A << "]";
+    }
+    if (c->type == cMERGE) {
+        ss << "merge[" << c->block_id << "][" << c->block_id2 << "]";
+    }
+    std::string ret;
+    ss >> ret;
+    return ret;
 }
