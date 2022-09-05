@@ -368,6 +368,7 @@ void create_cut_line(int x, int y, Axis axis) {
 }
 
 void undo_cut_line() {
+    den_warning(n_commands && commands[n_commands - 1].type == cCUT_LINE);
     // todo erase from map?
     int id = commands[--n_commands].block_id;
     block_fill_with_id(id);
@@ -408,6 +409,29 @@ void create_swap(int x0, int y0, int x1, int y1) {
     int id1 = pos_to_id[x1][y1];
     if (id0 == id1) return;
     create_swap_from_ids(id0, id1);
+    n_max_redo = n_commands;
+}
+
+void undo_swap() {
+    den_warning(n_commands && commands[n_commands - 1].type == cSWAP);
+    --n_commands;
+    int id0 = commands[n_commands].block_id;
+    int id1 = commands[n_commands].block_id2;
+    block_swap_filled_ids(id0, id1);
+
+    Block *b0 = &blocks[id0];
+    Block *b1 = &blocks[id1];
+    Block tmp = *b0;
+    *b0 = *b1;
+    *b1 = tmp;
+}
+
+void redo_swap() {
+    den_warning(commands[n_commands].type == cSWAP);
+    // мамкин хакер
+    n_commands++;
+    undo_swap();
+    n_commands++;
 }
 
 
@@ -417,6 +441,7 @@ void undo() {
     switch (c->type) {
         case cNONE: return;
         case cCUT_LINE: undo_cut_line(); return;
+        case cSWAP: undo_swap(); return;
     }
     SDL_Log("no undo for you");
 }
@@ -436,7 +461,9 @@ void redo() {
     switch (c->type) {
         case cNONE: return;
         case cCUT_LINE: redo_cut_line(); return;
+        case cSWAP: redo_swap(); return;
     }
+    SDL_Log("no redo for you");
 }
 
 void highlight_line_in_pos(u8 R, u8 G, u8 B, u8 A, int x, int y) {
@@ -651,15 +678,19 @@ void main_loop() {
                                         axis = "Y";
                                         v = c->y;
                                     }
+                                    SDL_Log("cut [%s] [%s] [%d]\n", id_to_string[c->block_id].c_str(), axis, v);
                                     fprintf(f, "cut [%s] [%s] [%d]\n", id_to_string[c->block_id].c_str(), axis, v);
                                 } break;
                                 case cSWAP: {
+                                    SDL_Log("swap [%s] [%s]\n", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
                                     fprintf(f, "swap [%s] [%s]\n", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
                                 } break;
                                 case cSET_COLOR: {
+                                    SDL_Log("color [%s] [%d,%d,%d,%d]\n", id_to_string[c->block_id].c_str(), c->R, c->G, c->B, c->A);
                                     fprintf(f, "color [%s] [%d,%d,%d,%d]\n", id_to_string[c->block_id].c_str(), c->R, c->G, c->B, c->A);
                                 } break;
                                 default: {
+                                    SDL_Log("git merge origin/master\n");
                                     fprintf(f, "git merge origin/master\n");
                                 } break;
                             }
@@ -707,9 +738,10 @@ void read_blocks(char const* filename) {
     int w = j["width"].get<int>();
     int h = j["height"].get<int>();
 
-    FILE *f = fopen("log.log", "w");
-    den_warning(f);
-    fprintf(f, "w = %d, h = %d\n", w, h);
+    //FILE *f = fopen("log.log", "w");
+    //defer { fclose(f); };
+    //den_warning(f);
+    //fprintf(f, "w = %d, h = %d\n", w, h);
 
     den_warning(n_blocks == 0);
     for (auto &bj : j["blocks"]) {
@@ -732,6 +764,7 @@ void read_blocks(char const* filename) {
         //fflush(f);
     }
 
+    /*
     char o[100000];
     int i = 0;
     for (int k = 0; k < text.size(); ++k) {
@@ -742,7 +775,7 @@ void read_blocks(char const* filename) {
     o[i] = 0;
 
     fputs(o, f);
-    fclose(f);
+    */
 }
 #endif
 
