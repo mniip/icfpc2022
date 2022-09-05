@@ -37,6 +37,7 @@ class ExitScopeHelp {
 #ifdef _MSC_VER
 #include "SDL.h"
 #include "SDL_ttf.h"
+#include "SDL_image.h"
 #else
 #include <SDL2\SDL.h>
 #include <SDL2\SDL_ttf.h>
@@ -69,7 +70,7 @@ SDL_Window   *g_window;
 #define PS 2
 #define X 0
 #define Y 1
-#define SNAP_GRID_SIZE 10
+#define SNAP_GRID_SIZE 40
 int g_canvas_zero_lower_left[2] = {(0)*PS, (WIN_H)*PS};
 SDL_Renderer *g_renderer;
 TTF_Font     *g_font;
@@ -268,6 +269,7 @@ bool        block_deleted[MAX_BLOCKS];
 SDL_Color   block_color[MAX_BLOCKS];
 SDL_Color   block_show_color[MAX_BLOCKS];
 int         n_blocks = 0;
+int         new_merge_id = 0;
 int pos_to_id[400][400];
 
 Command commands[MAX_COMMANDS];
@@ -367,6 +369,65 @@ void create_cut_line(int x, int y, Axis axis) {
     n_max_redo = n_commands;
 }
 
+bool is_merge_valid(int id0, int id1) {
+    if (id0 == id1) return false;
+    Block *b0 = &blocks[id0];
+    Block *b1 = &blocks[id1];
+    if (!(b0->xmin == b1->xmax || b0->xmax == b1->xmin || b0->ymin == b1->ymax || b0->ymax == b1->ymin)) return false;
+    if (b0->xmin == b1->xmax || b0->xmax == b1->xmin) {
+        if (!(b0->ymin == b1->ymin && b0->ymax == b1->ymax)) return false;
+    }
+    if (b0->ymin == b1->ymax || b0->ymax == b1->ymin) {
+        if (!(b0->xmin == b1->xmin && b0->xmax == b1->xmax)) return false;
+    }
+    return true;
+}
+
+u8 lerp_u8(u8 a, u8 b, float l) {
+    return (u8)(a*l + b*(1-l));
+}
+
+SDL_Color lerp_color(SDL_Color c, SDL_Color q, float l) {
+    #define L(Color) lerp_u8(c.Color, q.Color, l)
+    return {L(r), L(g), L(b), L(a)};
+    #undef L
+}
+
+void block_get_bounding_box_of_two(Block *b, int id0, int id1) {
+    Block *b0 = &blocks[id0];
+    Block *b1 = &blocks[id1];
+    #define M(Field, Func) b->Field##Func = SDL_##Func(b0->Field##Func, b1->Field##Func)
+    M(x, min);
+    M(x, max);
+    M(y, min);
+    M(y, max);
+    #undef M
+}
+
+void create_merge(int id0, int id1) {
+    if (!is_merge_valid(id0, id1)) {
+        SDL_Log("bad merge skipping");
+        return;
+    }
+    Block *b0 = &blocks[id0];
+    Block *b1 = &blocks[id1];
+    int id = n_blocks;
+    Block *b = &blocks[n_blocks++];
+
+    Command *c = &commands[n_commands++];
+    c->type = cMERGE;
+    c->block_id  = SDL_min(id0, id1);
+    c->block_id2 = SDL_max(id0, id1);
+
+    block_get_bounding_box_of_two(b, id0, id1);
+    block_color[id] = lerp_color(block_color[id0], block_color[id1], 0.5);
+    block_fill_with_id(id);
+    block_set_id(id, std::to_string(new_merge_id++));
+    get_random_color(&block_show_color[id]);
+    block_deleted[id0] = true;
+    block_deleted[id1] = true;
+}
+
 void undo_cut_line() {
     den_warning(n_commands && commands[n_commands - 1].type == cCUT_LINE);
     // todo erase from map?
@@ -376,6 +437,8 @@ void undo_cut_line() {
     n_blocks -= 2;
 }
 
+static SDL_Color prev_color;
+static bool prev_color_is_valid = false;
 void create_color(int id, SDL_Color color) {
     Command *c = &commands[n_commands++];
     c->type = cSET_COLOR;
@@ -384,7 +447,15 @@ void create_color(int id, SDL_Color color) {
     c->G = color.g;
     c->B = color.b;
     c->A = color.a;
+    prev_color = block_color[id];
     block_color[id] = color;
+    prev_color_is_valid = true;
+}
+
+void undo_color() {
+    Command *c = &commands[--n_commands];
+    block_color[c->block_id] = prev_color;
+    prev_color_is_valid = false;
 }
 
 void create_swap_from_ids(int id0, int id1) {
@@ -442,6 +513,7 @@ void undo() {
         case cNONE: return;
         case cCUT_LINE: undo_cut_line(); return;
         case cSWAP: undo_swap(); return;
+        case cSET_COLOR: if (prev_color_is_valid) { undo_color(); return; }
     }
     SDL_Log("no undo for you");
 }
@@ -507,7 +579,7 @@ void write_command() {
             case cCUT_POINT: break;
             case cSET_COLOR: create_color(pos_to_id[saved_x][saved_y], saved_color); break;
             case cSWAP: create_swap(saved_x, saved_y, mouse_x, mouse_y); break;
-            case cMERGE: break;
+            case cMERGE: create_merge(pos_to_id[saved_x][saved_y], pos_to_id[mouse_x][mouse_y]); break;
         }
         command_is_ready = false;
     }
@@ -527,6 +599,7 @@ void main_loop() {
         b->ymax = PIC_H;
         block_color[0] = {255, 255, 255, 255};
         n_blocks = 1;
+        new_merge_id = 1;
     }
 
     SDL_Rect canvas;
@@ -588,6 +661,17 @@ void main_loop() {
                     highlight_block_in_pos(c.r, c.g, c.b, c.a, mouse_x, mouse_y);
                 }
             } break;
+            case cMERGE: {
+                if (command_is_ready) {
+                    SDL_Color c = saved_color;
+                    highlight_block_in_pos(c.r, c.g, c.b, c.a, saved_x, saved_y);
+                    int id0 = pos_to_id[saved_x][saved_y];
+                    int id1 = pos_to_id[mouse_x][mouse_y];
+                    if (is_merge_valid(id0, id1)) {
+                        highlight_block_in_pos(c.r, c.g, c.b, c.a, mouse_x, mouse_y);
+                    }
+                }
+            } break;
         }
 
         for (int id = 0; id < n_blocks; ++id) if (!block_deleted[id]) {
@@ -620,6 +704,8 @@ void main_loop() {
                         // сохраняем операцию
                         saved_x = mouse_x;
                         saved_y = mouse_y;
+
+                        get_random_color(&saved_color);
                         command_is_ready = true;
                     }
                 }
@@ -639,7 +725,7 @@ void main_loop() {
                             auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
                     Immediate_Color(q,   0,   0,   0, 255);
                     Immediate_Color(w, 255, 255, 255, 255);
-                    Immediate_Color(e,   0,   0, 255, 255);
+                    Immediate_Color(e, 0,74,173,255);
                     //if (event.key.keysym.sym == SDLK_q) { saved_color = {0, 0, 0, 255};
                     //    auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
                     //if (event.key.keysym.sym == SDLK_w) { saved_color = {255, 255, 255, 255}; current_command = cSET_COLOR;
@@ -649,7 +735,7 @@ void main_loop() {
                     if (event.key.keysym.sym == SDLK_TAB) { command_is_ready = false; current_command = cSWAP; }
                     if (event.key.keysym.sym == SDLK_1) { command_is_ready = false; current_command = cCUT_LINE; current_axis = HORIZONTAL; }
                     if (event.key.keysym.sym == SDLK_2) { command_is_ready = false; current_command = cCUT_LINE; current_axis = VERTICAL; }
-                    if (event.key.keysym.sym == SDLK_3) { command_is_ready = false; current_command = cSET_COLOR; }
+                    if (event.key.keysym.sym == SDLK_3) { command_is_ready = false; current_command = cMERGE; }
                     if (event.key.keysym.sym == SDLK_v) { command_is_ready = false; current_axis = Other(current_axis, HORIZONTAL, VERTICAL); }
                     if (event.key.keysym.sym == SDLK_z) { command_is_ready = false; undo(); }
                     if (event.key.keysym.sym == SDLK_y) { command_is_ready = false; redo(); }
@@ -685,13 +771,17 @@ void main_loop() {
                                     SDL_Log("swap [%s] [%s]\n", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
                                     fprintf(f, "swap [%s] [%s]\n", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
                                 } break;
+                                case cMERGE: {
+                                    SDL_Log("merge [%s] [%s]\n", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
+                                    fprintf(f, "merge [%s] [%s]\n", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
+                                } break;
                                 case cSET_COLOR: {
                                     SDL_Log("color [%s] [%d,%d,%d,%d]\n", id_to_string[c->block_id].c_str(), c->R, c->G, c->B, c->A);
                                     fprintf(f, "color [%s] [%d,%d,%d,%d]\n", id_to_string[c->block_id].c_str(), c->R, c->G, c->B, c->A);
                                 } break;
                                 default: {
-                                    SDL_Log("git merge origin/master\n");
-                                    fprintf(f, "git merge origin/master\n");
+                                    SDL_Log("you have some point\n");
+                                    fprintf(f, "you have some point\n");
                                 } break;
                             }
                         }
@@ -758,6 +848,7 @@ void read_blocks(char const* filename) {
         B = block_color[id].b = (u8)bj["color"][2].get<int>();
         A = block_color[id].a = (u8)bj["color"][3].get<int>();
         block_fill_with_id(id);
+        ++new_merge_id;
 
         //fprintf(f, "\n{\"blockId\": \"%s\", \"bottomLeft\": [%d, %d], \"topRight\": [%d, %d], \"color\": [%d, %d, %d, %d]}, ",
         //            id_to_string[id].c_str(), b->xmin, b->ymin, b->xmax, b->ymax, R, G, B, A);
@@ -993,9 +1084,16 @@ void read_commands(char const* filename) {
 
     for (int i = 0; i < commands_on_string.size(); ++i) {
         Command_On_Strings *_c = &commands_on_string[i];
-        log_warning(_c->type == cSWAP, "type %d is unsupported", (int)_c->type);
-        Command *c = &commands[n_commands++];
+        log_warning(_c->type == cSWAP || _c->type == cMERGE, "type %d is unsupported", (int)_c->type);
+        Command *c = &commands[n_commands];
         command_from_command_on_strings(c, _c);
-        create_swap_from_ids(c->block_id, c->block_id2);
+        if (_c->type == cSWAP) {
+            SDL_Log("create swap from .isl");
+            create_swap_from_ids(c->block_id, c->block_id2);
+        }
+        if (_c->type == cMERGE) {
+            SDL_Log("create merge from .isl");
+            create_merge(c->block_id, c->block_id2);
+        }
     }
 }
