@@ -48,7 +48,7 @@ class ExitScopeHelp {
 #include <map>
 #include <string>
 #include <sstream>
-#define INLUDE_JSON 0
+#define INLUDE_JSON 1
 #if INLUDE_JSON
 #include "json.hpp"
 #endif
@@ -75,14 +75,21 @@ SDL_Renderer *g_renderer;
 TTF_Font     *g_font;
 
 void main_loop();
-void read_blocks(char const*);
+void read_blocks(char const* filename);
+void read_commands(char const* filename);
 
 int main(int const n_args, char ** const args) {
+    SDL_Log("Usage:\n"
+            "    %s <blocks.json> <swaps.isl> \n"
+            "    or %s", args[0], args[0]);
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) == -1) {SDL_Log("Could not initialize SDL: %s.\n", SDL_GetError()); return -1;}
     defer {SDL_Quit();};
 
     #if INLUDE_JSON
-    //read_blocks("26.initial.json");
+    if (n_args == 3) {
+        read_blocks(args[1]);
+        read_commands(args[2]);
+    }
     #endif
     main_loop();
 
@@ -324,7 +331,6 @@ void get_random_color(SDL_Color *c) {
 void create_cut_line(int x, int y, Axis axis) {
     int parent_id = pos_to_id[x][y];
     Block *p = &blocks[parent_id];
-    SDL_Log("%d %d - %d %d - %d %d - %d %d", x, p->xmin, x, p->xmax, y, p->ymin, y, p->ymax);
     if (axis == VERTICAL) {
         if (x == p->xmin || x == p->xmax) {
             SDL_Log("bad vertical cut skipping");
@@ -362,6 +368,7 @@ void create_cut_line(int x, int y, Axis axis) {
 }
 
 void undo_cut_line() {
+    den_warning(n_commands && commands[n_commands - 1].type == cCUT_LINE);
     // todo erase from map?
     int id = commands[--n_commands].block_id;
     block_fill_with_id(id);
@@ -380,9 +387,7 @@ void create_color(int id, SDL_Color color) {
     block_color[id] = color;
 }
 
-void create_swap(int x0, int y0, int x1, int y1) {
-    int id0 = pos_to_id[x0][y0];
-    int id1 = pos_to_id[x1][y1];
+void create_swap_from_ids(int id0, int id1) {
     if (id0 == id1) return;
     Block *b0 = &blocks[id0];
     Block *b1 = &blocks[id1];
@@ -399,6 +404,36 @@ void create_swap(int x0, int y0, int x1, int y1) {
     *b1 = tmp;
 }
 
+void create_swap(int x0, int y0, int x1, int y1) {
+    int id0 = pos_to_id[x0][y0];
+    int id1 = pos_to_id[x1][y1];
+    if (id0 == id1) return;
+    create_swap_from_ids(id0, id1);
+    n_max_redo = n_commands;
+}
+
+void undo_swap() {
+    den_warning(n_commands && commands[n_commands - 1].type == cSWAP);
+    --n_commands;
+    int id0 = commands[n_commands].block_id;
+    int id1 = commands[n_commands].block_id2;
+    block_swap_filled_ids(id0, id1);
+
+    Block *b0 = &blocks[id0];
+    Block *b1 = &blocks[id1];
+    Block tmp = *b0;
+    *b0 = *b1;
+    *b1 = tmp;
+}
+
+void redo_swap() {
+    den_warning(commands[n_commands].type == cSWAP);
+    // мамкин хакер
+    n_commands++;
+    undo_swap();
+    n_commands++;
+}
+
 
 void undo() {
     if (n_commands == 0) return;
@@ -406,6 +441,7 @@ void undo() {
     switch (c->type) {
         case cNONE: return;
         case cCUT_LINE: undo_cut_line(); return;
+        case cSWAP: undo_swap(); return;
     }
     SDL_Log("no undo for you");
 }
@@ -425,7 +461,9 @@ void redo() {
     switch (c->type) {
         case cNONE: return;
         case cCUT_LINE: redo_cut_line(); return;
+        case cSWAP: redo_swap(); return;
     }
+    SDL_Log("no redo for you");
 }
 
 void highlight_line_in_pos(u8 R, u8 G, u8 B, u8 A, int x, int y) {
@@ -596,12 +634,18 @@ void main_loop() {
             } else if (event.type & SDL_KEYDOWN) {
                 if (event.type == SDL_KEYUP) {
                     #define Other(Val, Option0, Option1) ((Val) == (Option0) ? (Option1) : (Option0))
-                    if (event.key.keysym.sym == SDLK_q) { saved_color = {0, 0, 0, 255};
-                        auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
-                    if (event.key.keysym.sym == SDLK_w) { saved_color = {255, 255, 255, 255}; current_command = cSET_COLOR;
-                        auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
-                    if (event.key.keysym.sym == SDLK_e) { saved_color = {0, 0, 255, 255}; current_command = cSET_COLOR;
-                        auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
+                    #define Immediate_Color(Key, R, G, B, A) \
+                        if (event.key.keysym.sym == SDLK_##Key) { saved_color = {R, G, B, A}; \
+                            auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
+                    Immediate_Color(q,   0,   0,   0, 255);
+                    Immediate_Color(w, 255, 255, 255, 255);
+                    Immediate_Color(e,   0,   0, 255, 255);
+                    //if (event.key.keysym.sym == SDLK_q) { saved_color = {0, 0, 0, 255};
+                    //    auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
+                    //if (event.key.keysym.sym == SDLK_w) { saved_color = {255, 255, 255, 255}; current_command = cSET_COLOR;
+                    //    auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
+                    //if (event.key.keysym.sym == SDLK_e) { saved_color = {0, 0, 255, 255}; current_command = cSET_COLOR;
+                    //    auto tmp = current_command; current_command = cSET_COLOR; write_command(); current_command = tmp; }
                     if (event.key.keysym.sym == SDLK_TAB) { command_is_ready = false; current_command = cSWAP; }
                     if (event.key.keysym.sym == SDLK_1) { command_is_ready = false; current_command = cCUT_LINE; current_axis = HORIZONTAL; }
                     if (event.key.keysym.sym == SDLK_2) { command_is_ready = false; current_command = cCUT_LINE; current_axis = VERTICAL; }
@@ -615,6 +659,8 @@ void main_loop() {
                     if (event.key.keysym.sym == SDLK_UP)    { saved_y += 1; clamp(&saved_y, 0, PIC_H); }
                     if (event.key.keysym.sym == SDLK_SPACE) { write_command(); }
                     if (event.key.keysym.sym == SDLK_s) {
+                        FILE *f = fopen("commands.isl", "w");
+                        defer { fclose(f); };
                         for (int i = 0; i < n_commands; ++i) {
                             Command *c = &commands[i];
                             switch (c->type) {
@@ -632,16 +678,20 @@ void main_loop() {
                                         axis = "Y";
                                         v = c->y;
                                     }
-                                    SDL_Log("cut [%s] [%s] [%d]", id_to_string[c->block_id].c_str(), axis, v);
+                                    SDL_Log("cut [%s] [%s] [%d]\n", id_to_string[c->block_id].c_str(), axis, v);
+                                    fprintf(f, "cut [%s] [%s] [%d]\n", id_to_string[c->block_id].c_str(), axis, v);
                                 } break;
                                 case cSWAP: {
-                                    SDL_Log("swap [%s] [%s]", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
+                                    SDL_Log("swap [%s] [%s]\n", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
+                                    fprintf(f, "swap [%s] [%s]\n", id_to_string[c->block_id].c_str(), id_to_string[c->block_id2].c_str());
                                 } break;
                                 case cSET_COLOR: {
-                                    SDL_Log("color [%s] [%d,%d,%d,%d]", id_to_string[c->block_id].c_str(), c->R, c->G, c->B, c->A);
+                                    SDL_Log("color [%s] [%d,%d,%d,%d]\n", id_to_string[c->block_id].c_str(), c->R, c->G, c->B, c->A);
+                                    fprintf(f, "color [%s] [%d,%d,%d,%d]\n", id_to_string[c->block_id].c_str(), c->R, c->G, c->B, c->A);
                                 } break;
                                 default: {
-                                    SDL_Log("swap underwear");
+                                    SDL_Log("git merge origin/master\n");
+                                    fprintf(f, "git merge origin/master\n");
                                 } break;
                             }
                         }
@@ -688,8 +738,10 @@ void read_blocks(char const* filename) {
     int w = j["width"].get<int>();
     int h = j["height"].get<int>();
 
-    FILE *f = fopen("log.log", "w");
-    fprintf(f, "w = %d, h = %d\n", w, h);
+    //FILE *f = fopen("log.log", "w");
+    //defer { fclose(f); };
+    //den_warning(f);
+    //fprintf(f, "w = %d, h = %d\n", w, h);
 
     den_warning(n_blocks == 0);
     for (auto &bj : j["blocks"]) {
@@ -707,11 +759,13 @@ void read_blocks(char const* filename) {
         A = block_color[id].a = (u8)bj["color"][3].get<int>();
         block_fill_with_id(id);
 
-        // fprintf(f, "\n{\"blockId\": \"%s\", \"bottomLeft\": [%d, %d], \"topRight\": [%d, %d], \"color\": [%d, %d, %d, %d]}, ",
-        //         id_to_string[id].c_str(), b->xmin, b->ymin, b->xmax, b->ymax, R, G, B, A);
+        //fprintf(f, "\n{\"blockId\": \"%s\", \"bottomLeft\": [%d, %d], \"topRight\": [%d, %d], \"color\": [%d, %d, %d, %d]}, ",
+        //            id_to_string[id].c_str(), b->xmin, b->ymin, b->xmax, b->ymax, R, G, B, A);
+        //fflush(f);
     }
 
-    char o[10000];
+    /*
+    char o[100000];
     int i = 0;
     for (int k = 0; k < text.size(); ++k) {
         char c = text[k];
@@ -721,7 +775,7 @@ void read_blocks(char const* filename) {
     o[i] = 0;
 
     fputs(o, f);
-    fclose(f);
+    */
 }
 #endif
 
@@ -925,4 +979,23 @@ std::string command_on_strings_to_string(Command_On_Strings *c) {
     std::string ret;
     ss >> ret;
     return ret;
+}
+
+void read_commands(char const* filename) {
+    std::string text = read_entire_file(filename);
+    std::vector<std::string> lines = lines_of_the_string(text);
+    std::vector<Command_On_Strings> commands_on_string;
+    commands_on_string.reserve(lines.size());
+    for (std::string const& line : lines) {
+        if (line == "" || line == "\n") continue;
+        commands_on_string.emplace_back(line_to_command(line));
+    }
+
+    for (int i = 0; i < commands_on_string.size(); ++i) {
+        Command_On_Strings *_c = &commands_on_string[i];
+        log_warning(_c->type == cSWAP, "type %d is unsupported", (int)_c->type);
+        Command *c = &commands[n_commands++];
+        command_from_command_on_strings(c, _c);
+        create_swap_from_ids(c->block_id, c->block_id2);
+    }
 }
