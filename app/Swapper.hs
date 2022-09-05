@@ -28,8 +28,9 @@ main = do
           let swaps = keepImproving image' grid
               grid' = foldl swapInGrid grid swaps
               n = length $ concat grid
-          putStr $ printSwaps (optimizeSwaps swaps n)
-          putStr $ printColors (recolor image' grid')
+          putStr $ colorLinesV image' grid
+          -- putStr $ printSwaps (optimizeSwaps swaps n)
+          -- putStr $ printColors (recolor image' grid')
           -- savePngImage "grid.png" (ImageRGBA8 $ drawGrid 10 grid)
       Right _ -> error "Invalid pixel format"
     _ -> error "Usage: swapper <input.png>"
@@ -100,6 +101,65 @@ inGrid grid i = if null locs then error "Heh" else snd $ head locs
           locs = filter (\(ind, _) -> ind == i) . concat $
                  zipWith (\y xs -> zipWith (\x (ind, c) -> (ind, ((x, y), c))) [0..] xs) [0 .. len - 1] grid
 
+-- Merge blocks at given coordinates.
+mergeCells :: Int -> Grid -> ((Int, Int), (Int, Int)) -> ((Int, Int), Grid)
+mergeCells maxid grid (c1, c2) = ((i1, i2), map (map replace) grid)
+    where (i1, _) = (grid !! (snd c1)) !! (fst c1)
+          (i2, _) = (grid !! (snd c2)) !! (fst c2)
+          replace c@(i, _) | i == i1 = (maxid, PixelRGBA8 0 0 0 0)
+                           | i == i2 = (maxid, PixelRGBA8 0 0 0 0)
+                           | otherwise = c
+
+merge :: Grid -> [((Int, Int), (Int, Int))] -> ([(Int, Int)], Grid)
+merge grid cmds = go (len*len) grid cmds
+    where len = length grid
+          go _ g [] = ([], g)
+          go maxid g (c:cs) = let (i, g') = mergeCells maxid g c
+                                  (is, g'') = go (maxid+1) g' cs
+                              in (i:is, g'')
+
+mergeLine :: Grid -> [(Int, Int)]
+mergeLine grid = fst $ merge grid [((0,y-1), (0,y)) | y <- [1..len-1]]
+    where len = length grid
+
+mergeEverything :: Grid -> [(Int, Int)]
+mergeEverything grid = fst $ merge grid $ columns ++ row
+    where len = length grid
+          columns = [((x,y-1), (x,y)) | y <- [1..len-1], x <- [0..len-1]]
+          row = [((x-1, 0), (x, 0)) | x <- [1..len-1]]
+
+-- Glue blocks into horizontal lines and color each line
+colorLinesH :: Image PixelRGBA8 -> Grid -> String
+colorLinesH image grid = printMerges cmds ++ printColors colors
+    where len = length grid
+          width = imageWidth image
+          height = imageHeight image
+          size = width `div` len
+          rows = [((x-1, y), (x, y)) | x <- [1..len-1], y <- [0..len-1]]
+          (cmds, grid') = merge grid rows
+          colors = [(fst $ head (grid' !! y0), median [pixelAt image x (y0*size + y) | x <- [0..width-1], y <- [0..size-1]]) | y0 <- [0..len-1]]
+
+-- Glue blocks into vertical lines and color each line
+colorLinesV :: Image PixelRGBA8 -> Grid -> String
+colorLinesV image grid = printMerges cmds ++ printColors colors
+    where len = length grid
+          width = imageWidth image
+          height = imageHeight image
+          size = width `div` len
+          cols = [((x, y-1), (x, y)) | y <- [1..len-1], x <- [0..len-1]]
+          (cmds, grid') = merge grid cols
+          colors = [(fst $ (head grid') !! x0,
+                     median [pixelAt image (x0*size + x) y | x <- [0..size-1], y <- [0..height-1]]) | x0 <- [0..len-1]]
+
+colorFull :: Image PixelRGBA8 -> Grid -> String
+colorFull image grid = printMerges full ++ "color [" ++ show maxid ++ "] [" ++
+                       show r ++ "," ++ show g ++ "," ++ show b ++ "," ++ show a ++ "]\n"
+    where full = mergeEverything grid
+          maxid = 1 + (maximum $ concatMap (\(a, b) -> [a, b]) full)
+          width = imageWidth image
+          height = imageHeight image
+          PixelRGBA8 r g b a = median [pixelAt image x y | x <- [0..width-1], y <- [0..height-1]]
+
 type Swap = (Int, Int)
 
 -- Given indices of blocks, swap them in the grid
@@ -122,16 +182,10 @@ saneTransp grid = concat [ [(x, y) | x <- c1, y <- c2] | (c1, c2) <- pairs class
     where classes = map (map fst) . groupBy ((==) `on` snd) . sortBy (compare `on` snd) $ concat grid
           len = length classes
 
--- Takes the image, block/image square distance matrix, grid, allowed transpositions and returns best score, transposition and a new grid.
-improveGrid :: Image PixelRGBA8 -> M.Map (Int, (Int, Int)) Int -> Grid -> [(Int, Swap)] -> (Int, Swap, Grid)
-improveGrid image baked grid allowed = minimumBy (compare `on` (\(s, _, _) -> s)) grids
-                              {- if null suggestions
-                                 then (1000000, (0, 0), grid)
-                                 else head suggestions -}
+-- Takes the block/image square distance matrix, grid, allowed transpositions and returns best score, transposition and a new grid.
+improveGrid :: M.Map (Int, (Int, Int)) Int -> Grid -> [(Int, Swap)] -> (Int, Swap, Grid)
+improveGrid baked grid allowed = minimumBy (compare `on` (\(s, _, _) -> s)) grids
     where len = length grid
-          size = width `div` len -- we assume images are square
-          width = imageWidth image
-          height = imageHeight image
           grids = map (\(s, t) -> (s, t, swapInGrid grid t)) allowed
 
 judgeSwaps :: M.Map (Int, (Int, Int)) Int -> Grid -> [Swap] -> [(Int, Swap)]
@@ -159,13 +213,17 @@ keepImproving image grid = go grid (judgeSwaps baked grid $ saneTransp grid)
           width = imageWidth image
           size = width `div` (length grid)
           baked = bakedDists image size grid
-          go g allowed = let (s, t, g') = improveGrid image baked g allowed
+          go g allowed = let (s, t, g') = improveGrid baked g allowed
                              allowed' = rejudgeSwaps baked g' (filter (\(_, t') -> t /= t') allowed) t
                          in if s < 0 then t : go g' allowed' else []
 
 printSwaps :: [Swap] -> String
 printSwaps swaps = unlines $ map printSwap swaps
     where printSwap (a, b) = "swap [" ++ show a ++ "] [" ++ show b ++ "]"
+
+printMerges :: [Swap] -> String
+printMerges swaps = unlines $ map printMerge swaps
+    where printMerge (a, b) = "merge [" ++ show a ++ "] [" ++ show b ++ "]"
 
 applyPerms :: [Swap] -> Int -> Int
 applyPerms perms i = foldl switch i perms
